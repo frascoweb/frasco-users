@@ -1,0 +1,12 @@
+{% extends "users/layout.html" %}
+{% block users_title %}{{ _("Signup") }}{% endblock %}
+{% block users_content %}
+<{ form_tag form }>
+  <{ form_field form.email.email(_("Email"), required=True) }/>
+  {% if must_provide_password %}
+  <{ form_field form.password.password(_("Password")) }/>
+  <{ form_field form.password_confirm.password(_("Confirm password")) }/>
+  {% endif %}
+  <{ form_btn _("Signup") }/>
+</{}>
+{% endblock %}

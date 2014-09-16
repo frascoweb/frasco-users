@@ -1,0 +1,16 @@
+{% extends "users/layout.html" %}
+{% block users_title %}{{ _('Login') }}{% endblock %}
+{% block users_content %}
+<{ form_tag form }>
+  <{ form_field form.email.email(_("Email"), required=True) }/>
+  <{ form_field form.password.password(_("Password"), required=True) }/>
+  <{ form_field form.remember.checkbox(_("Remember me")) }/>
+  <p class="button">
+    <button type="submit">{{ _("Login") }}</button>
+    <a href="{{ url_for('users.send_reset_password') }}">{{ _("Password lost?") }}</a>
+  </p>
+</{}>
+{% for name, login_view in app.features.users.oauth_apps %}
+<a href="{{ url_for(login_view) }}">{{ _("Login with %(provider)s", provider=name) }}</a>
+{% endfor %}
+{% endblock %}
