@@ -172,7 +172,7 @@ class UsersFeature(Feature):
     def current(self):
         """Returns the current user
         """
-        return current_user
+        return current_user._get_current_object()
 
     def logged_in(self):
         """Checks if the user is logged in
