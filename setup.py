@@ -5,6 +5,9 @@ def desc():
     with open("README.md") as f:
         return f.read()
 
+def reqs():
+    with open('requirements.txt') as f:
+        return f.read().splitlines()
 
 setup(
     name='frasco-users',
@@ -19,12 +22,9 @@ setup(
     include_package_data=True,
     zip_safe=False,
     platforms='any',
-    install_requires=[
+    install_requires=reqs() + [
         'frasco',
         'frasco-forms',
-        'frasco-models',
-        'Flask-Login==0.2.11',
-        'Flask-Bcrypt==0.6.0',
-        'Flask-OAuth==0.12'
+        'frasco-models'
     ]
 )
