@@ -26,7 +26,7 @@ class UserMixin(login.UserMixin):
         return self.is_active
 
     def get_auth_token(self):
-        return self.auth_token_serializer.dumps(self.pk())
+        return self.auth_token_serializer.dumps(self.id)
 
 
 class SignupValidationFailedException(Exception):
@@ -131,23 +131,18 @@ class UsersFeature(Feature):
 
         model.__bases__ = (UserMixin,) + model.__bases__
         model.auth_token_serializer = self.token_serializer
-        self.query_model = app.features.models.query(model)
+        self.query = app.features.models.query(self.options['model'])
 
         if self.options["username_column"] != self.options["email_column"]:
             app.features.models.ensure_model(model, **dict([
-                (self.options["username_column"], dict(index=True, unique=self.options["username_is_unique"]))]))
+                (self.options["username_column"], dict(type=str, index=True, unique=self.options["username_is_unique"]))]))
 
         app.features.models.ensure_model(model, **dict([
             (self.options["email_column"], dict(type=str, index=True, unique=self.options["email_is_unique"])),
             (self.options["password_column"], str)]))
 
-        @self.login_manager.user_loader
-        def user_loader(pk):
-            return self.query_model.get(pk)
-
-        @self.login_manager.token_loader
-        def token_loader(token):
-            return self.load_user_from_token(token)
+        self.login_manager.user_loader(self.find_by_id)
+        self.login_manager.token_loader(self.find_by_token)
 
     def init_admin(self, admin):
         admin.register_blueprint("frasco_users.admin:bp")
@@ -179,25 +174,31 @@ class UsersFeature(Feature):
         """
         return current_user.is_authenticated()
 
-    def get_by_username(self, username):
-        return self.query_model.filter_by(**dict([(self.options['username_column'], username)])).first()
+    def find_by_id(self, id):
+        return self.query.get(id)
+
+    def find_by_username(self, username):
+        return self.query.filter(**dict([(self.options['username_column'], username)])).first()
+
+    def find_by_email(self, email):
+        return self.query.filter(**dict([(self.options['email_column'], email)])).first()
 
     def generate_user_token(self, user, salt=None):
         """Generates a unique token associated to the user
         """
-        return self.token_serializer.dumps(user.pk(), salt=salt)
+        return self.token_serializer.dumps(user.id, salt=salt)
 
-    def load_user_from_token(self, token, salt=None, max_age=None):
+    def find_by_token(self, token, salt=None, max_age=None):
         """Loads a user instance identified by the token generated using generate_user_token()
         """
         model = current_app.features.models[self.options["model"]]
         try:
-            pk = self.token_serializer.loads(token, salt=salt, max_age=max_age)
+            id = self.token_serializer.loads(token, salt=salt, max_age=max_age)
         except BadSignature:
             return None
-        if pk is None:
+        if id is None:
             return None
-        return model.query_model.get(pk)
+        return self.find_by_id(id)
 
     def update_password(self, user, password):
         """Updates the password of a user
@@ -259,7 +260,7 @@ class UsersFeature(Feature):
                 return user
 
         if not self.options["disable_default_authentication"]:
-            user = self.query_model.filter_by(**dict([(self.options['username_column'], username)])).first()
+            user = self.find_by_username(username)
             if user and self.check_password(user, password):
                 return user
 
@@ -270,7 +271,7 @@ class UsersFeature(Feature):
         user.last_login_provider = provider or self.options["default_auth_provider_name"]
         user.last_login_from = request.remote_addr
         populate_obj(user, attrs)
-        current_app.features.models.save(user)
+        user.save()
         login.login_user(user, remember=remember, force=force)
 
     @action()
@@ -333,8 +334,7 @@ class UsersFeature(Feature):
         user.signup_from = request.remote_addr
         user.signup_provider = provider or self.options["default_auth_provider_name"]
         user.auth_providers = [user.signup_provider]
-
-        current_app.features.models.save(user)
+        user.save()
         self.post_signup(user, login_user, send_email)
         return user
 
@@ -374,7 +374,7 @@ class UsersFeature(Feature):
                 raise SignupValidationFailedException("username_missing")
             return False
         if ucol != emailcol and self.options["username_is_unique"]:
-            if self.query_model.filter_by(**dict([(ucol, username)])).count() > 0:
+            if self.query.filter(**dict([(ucol, username)])).count() > 0:
                 if flash_messages and self.options["signup_user_exists_message"]:
                     flash(self.options["signup_user_exists_message"], "error")
                 if raise_error:
@@ -387,7 +387,7 @@ class UsersFeature(Feature):
                 raise SignupValidationFailedException("email_missing")
             return False
         if self.options["email_is_unique"] and email:
-            if self.query_model.filter_by(**dict([(emailcol, email)])).count() > 0:
+            if self.query.filter(**dict([(emailcol, email)])).count() > 0:
                 if flash_messages and self.options["signup_email_exists_message"]:
                     flash(self.options["signup_email_exists_message"], "error")
                 if raise_error:
@@ -416,8 +416,7 @@ class UsersFeature(Feature):
         """
         if not user and "form" in current_context.data and request.method == "POST":
             form = current_context.data.form
-            ucol = self.options["username_column"]
-            user = self.query_model.filter_by(**dict([(ucol, form[ucol].data)])).first()
+            user = self.find_by_username(form[self.options["username_column"]].data)
 
         if not user:
             raise InvalidOptionError("Invalid user in 'reset_password_token' action")
@@ -431,7 +430,7 @@ class UsersFeature(Feature):
 
     @command("send-reset-password")
     def send_reset_password_command(self, username, send_email=True):
-        user = self.get_by_username(username)
+        user = self.find_by_username(username)
         if not user:
             raise Exception("User '%s' not found" % username)
         token = self.gen_reset_password_token(user, send_email)
@@ -452,7 +451,7 @@ class UsersFeature(Feature):
                 raise OptionMissingError(("Missing 'token' option or 'token' view arg "
                                           "or 'token' GET paramater in 'reset_password' action"))
 
-        user = self.load_user_from_token(token, salt="password-reset", max_age=self.options["reset_password_ttl"])
+        user = self.find_by_token(token, salt="password-reset", max_age=self.options["reset_password_ttl"])
         if user is None:
             if self.options["reset_password_token_error_message"]:
                 flash(self.options["reset_password_error_message"], "error")
@@ -466,11 +465,11 @@ class UsersFeature(Feature):
 
     @command("reset-password")
     def reset_password_command(self, username, password):
-        user = self.get_by_username(username)
+        user = self.find_by_username(username)
         if not user:
             raise Exception("User '%s' not found" % username)
         self.update_password(user, password)
-        current_app.features.models.save(user)
+        user.save()
 
     @action("update_user_password", default_option="user")
     def update_password_from_form(self, user=None, form=None):
@@ -493,7 +492,7 @@ class UsersFeature(Feature):
         self.check_password_confirm(form, "reset_password_confirm_mismatch")
 
         self.update_password(user, password)
-        current_app.features.models.save(user)
+        user.save()
         self.update_user_password_signal.send(self, user=user)
 
     @action()
@@ -517,7 +516,6 @@ class UsersFeature(Feature):
         """Checks that an attribute of the current user is unique amongst all users.
         If no value is provided, the current form will be used.
         """
-        idcol = self.model.__primary_key_column__
         user = user or current_user
         if value is None:
             form = form or current_context.data.get("form")
@@ -525,9 +523,7 @@ class UsersFeature(Feature):
                 raise OptionMissingError("Missing 'value' option or form in 'check_user_unique_attr' action")
             value = form[name].data
 
-        q = self.query_model.filter(self.query_model.op(name, "=", value),\
-                                    self.query_model.op(idcol, "!=", getattr(user, idcol)))
-        if q.count() > 0:
+        if self.query.filter(**dict([(name, value), ("id__neq", user.id)])).count() > 0:
             if flash_msg is None:
                 flash_msg = "The %s is already in use" % name
             if flash_msg:
@@ -537,7 +533,7 @@ class UsersFeature(Feature):
     def oauth_login(self, provider, id_column, id, attrs, defaults):
         """Execute a login via oauth. If no user exists, oauth_signup() will be called
         """
-        user = self.query_model.filter_by(**dict([(id_column, id)])).first()
+        user = self.query.filter(**dict([(id_column, id)])).first()
         redirect_url = request.args.get('next') or url_for(self.options["redirect_after_login"])
         if current_user.is_authenticated():
             if user and user != current_user:
@@ -562,7 +558,7 @@ class UsersFeature(Feature):
 
     @command("show")
     def show_user_command(self, username):
-        user = self.get_by_username(username)
+        user = self.find_by_username(username)
         if not user:
             raise Exception("User '%s' not found" % username)
         command.echo(user.for_json())
