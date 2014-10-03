@@ -17,13 +17,8 @@ from .jinja_ext import LoginRequiredExtension, AnonymousOnlyExtension
 class UserMixin(login.UserMixin):
     auth_token_columns = None
 
-    def get_id(self):
-        return str(self._id)
-
     def is_active(self):
-        if "is_active" not in self:
-            return True
-        return self.is_active
+        return getattr(self, 'active_account', True)
 
     def get_auth_token(self):
         return self.auth_token_serializer.dumps(self.id)
