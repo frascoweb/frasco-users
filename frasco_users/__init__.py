@@ -15,13 +15,14 @@ from .jinja_ext import LoginRequiredExtension, AnonymousOnlyExtension
 
 
 class UserMixin(login.UserMixin):
-    auth_token_columns = None
-
     def is_active(self):
-        return getattr(self, 'active_account', True)
+        is_active = getattr(self, 'active_account', None)
+        if is_active is None:
+            return True
+        return is_active
 
     def get_auth_token(self):
-        return self.auth_token_serializer.dumps(self.id)
+        return self.auth_token_serializer.dumps(self.get_id())
 
 
 class SignupValidationFailedException(Exception):
@@ -56,12 +57,12 @@ class UsersFeature(Feature):
                 "default_auth_provider_name": "app",
                 "remember_days": 365,
                 "reset_password_ttl": 86400,
-                "redirect_after_login": "main.index",
-                "redirect_after_signup": "main.index",
+                "redirect_after_login": "index",
+                "redirect_after_signup": "index",
                 "redirect_after_signup_disallowed": None, # go to login
-                "redirect_after_logout": "main.index",
+                "redirect_after_logout": "index",
                 "redirect_after_reset_password_token": False,
-                "redirect_after_reset_password": "main.index",
+                "redirect_after_reset_password": "index",
                 "send_welcome_email": False,
                 "send_reset_password_email": True,
                 "login_error_message": lazy_translate(u"Invalid email or password"),
@@ -214,7 +215,7 @@ class UsersFeature(Feature):
     def login_required(self, fresh=False):
         """Ensures that a user is authenticated
         """
-        if not current_user.is_authenticated() or (fresh and not self.login_manager.login_fresh()):
+        if not self.logged_in() or (fresh and not self.login_manager.login_fresh()):
             current_context.exit(self.login_manager.unauthorized(), trigger_action_group="missing_user")
 
     @action(default_option="user", defaults=dict(remember=None))
