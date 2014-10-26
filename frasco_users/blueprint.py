@@ -7,12 +7,18 @@ from frasco.expression import compile_expr
 bp = Blueprint("users", __name__, template_folder="templates")
 
 
+def make_redirect_url(value):
+    if value.startswith('http://') or value.startswith('https://'):
+        return value
+    return url_for(value)
+
+
 @bp.view('/login', template="users/login.html")
 @with_actions([{"form": "LoginForm"}])
 @with_actions("form_submitted", ["users.login"])
 @pass_feature("users")
 def login(users):
-    redirect_url = request.args.get("next") or url_for(users.options["redirect_after_login"])
+    redirect_url = request.args.get("next") or make_redirect_url(users.options["redirect_after_login"])
     if users.logged_in() or request.method == "POST":
         return redirect(redirect_url)
 
@@ -22,7 +28,7 @@ def login(users):
 def logout():
     redirect_to = current_app.features.users.options["redirect_after_logout"]
     if redirect_to:
-        return redirect(url_for(redirect_to))
+        return redirect(make_redirect_url(redirect_to))
 
 
 @bp.view('/signup', template="users/signup.html")
@@ -41,7 +47,7 @@ def signup(users):
     current_context["must_provide_password"] = "oauth_user_attrs" not in session \
         or users.options["oauth_must_provide_password"]
 
-    redirect_url = request.args.get("next") or url_for(users.options["redirect_after_signup"])
+    redirect_url = request.args.get("next") or make_redirect_url(users.options["redirect_after_signup"])
     if users.logged_in():
         return redirect(redirect_url)
         
@@ -83,7 +89,7 @@ def oauth_signup(users, models):
         return redirect(signup_url)
     del session["oauth_user_defaults"]
     del session["oauth_user_attrs"]
-    return redirect(request.args.get("next") or url_for(users.options["redirect_after_login"]))
+    return redirect(request.args.get("next") or make_redirect_url(users.options["redirect_after_login"]))
 
 
 @bp.view('/login/reset-password', template="users/send_reset_password.html")
@@ -96,7 +102,7 @@ def send_reset_password():
         if msg:
             flash(msg, "success")
         if redirect_to:
-            return redirect(url_for(redirect_to))
+            return redirect(make_redirect_url(redirect_to))
 
 
 @bp.view('/login/reset-password/<token>', methods=('GET', 'POST'), template="users/reset_password.html")
@@ -109,4 +115,4 @@ def reset_password(token):
         if msg:
             flash(msg, "success")
         if redirect_to:
-            return redirect(url_for(redirect_to))
+            return redirect(make_redirect_url(redirect_to))
