@@ -519,7 +519,7 @@ class UsersFeature(Feature):
                 raise OptionMissingError("Missing 'value' option or form in 'check_user_unique_attr' action")
             value = form[name].data
 
-        if self.query.filter(**dict([(name, value), ("id__neq", user.id)])).count() > 0:
+        if self.query.filter(**dict([(name, value), ("id__ne", user.id)])).count() > 0:
             if flash_msg is None:
                 flash_msg = "The %s is already in use" % name
             if flash_msg:
