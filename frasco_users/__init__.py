@@ -6,6 +6,7 @@ from flask.ext import login
 from flask.ext.login import current_user, login_required, make_secure_token
 from flask.ext.bcrypt import Bcrypt
 from flask_oauth import OAuth
+from flask import has_request_context
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 import uuid
 import datetime
@@ -88,6 +89,8 @@ class UsersFeature(Feature):
     reset_password_signal = signal('user_reset_password')
     update_user_password_signal = signal('user_update_password')
 
+    ignore_attributes = ['current']
+
     def init_app(self, app):
         self.app = app
 
@@ -109,6 +112,7 @@ class UsersFeature(Feature):
         self.login_manager.login_message_category = "warning"
         self.login_manager.needs_refresh_message = self.options["fresh_login_required_message"]
         self.login_manager.needs_refresh_message_category = "warning"
+        self.current_override = None
 
         if app.features.exists("emails"):
             app.features.emails.add_templates_from_package(__name__)
@@ -163,7 +167,14 @@ class UsersFeature(Feature):
     def current(self):
         """Returns the current user
         """
-        return current_user._get_current_object()
+        return self.current_override or current_user._get_current_object()
+
+    @current.setter
+    def current(self, user):
+        if has_request_context():
+            login.login_user(user)
+        else:
+            self.current_override = user
 
     def logged_in(self):
         """Checks if the user is logged in
