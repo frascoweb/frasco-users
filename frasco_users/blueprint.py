@@ -64,6 +64,11 @@ def signup(users):
         user = users.model()
         if "oauth_user_defaults" in session:
             populate_obj(user, session["oauth_user_defaults"] or {})
+        if users.options['require_code_on_signup'] and 'code' in current_context['form']:
+            if not users.check_signup_code(current_context['form'].code.data):
+                if users.options['bad_signup_code_message']:
+                    flash(users.options['bad_signup_code_message'], 'error')
+                return redirect(url_for('users.signup', next=request.args.get('next')))
         users.signup(user, form=current_context["form"],
             must_provide_password=current_context["must_provide_password"], **session.get("oauth_user_attrs", {}))
         session.pop("oauth_user_defaults", None)

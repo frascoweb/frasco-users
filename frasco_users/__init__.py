@@ -48,6 +48,8 @@ class UsersFeature(Feature):
                 "must_provide_username": True,
                 "must_provide_email": True,
                 "allow_signup": True,
+                "require_code_on_signup": False,
+                "allowed_signup_codes": [],
                 "oauth_signup_only": False,
                 "oauth_login_only": False,
                 "oauth_must_signup": False,
@@ -76,6 +78,7 @@ class UsersFeature(Feature):
                 "signup_user_exists_message": lazy_translate(u"An account using the same username already exists"),
                 "signup_email_exists_message": lazy_translate(u"An account using the same email already exists"),
                 "password_confirm_failed_message": lazy_translate(u"The two passwords do not match"),
+                "bad_signup_code_message": lazy_translate(u"The provided code is not valid"),
                 "reset_password_token_error_message": lazy_translate(u"This email does not exist in our database"),
                 "reset_password_token_success_message": lazy_translate(u"An email has been sent to your email address with a link to reset your password"),
                 "reset_password_error_message": lazy_translate(u"Invalid or expired link to reset your password"),
@@ -104,6 +107,7 @@ class UsersFeature(Feature):
         self.oauth = OAuth()
         self.oauth_apps = []
         self.authentify_handlers = []
+        self.signup_code_checker = None
 
         self.login_manager = login.LoginManager(app)
         self.login_manager.login_view = self.options["login_view"]
@@ -223,11 +227,15 @@ class UsersFeature(Feature):
         current_context["current_user"] = current_user
 
     @action()
-    def login_required(self, fresh=False):
+    def login_required(self, fresh=False, redirect_to=None):
         """Ensures that a user is authenticated
         """
         if not self.logged_in() or (fresh and not self.login_manager.login_fresh()):
-            current_context.exit(self.login_manager.unauthorized(), trigger_action_group="missing_user")
+            if redirect_to:
+                resp = redirect(redirect_to)
+            else:
+                resp = self.login_manager.unauthorized()
+            current_context.exit(resp, trigger_action_group="missing_user")
 
     @action(default_option="user", defaults=dict(remember=None))
     def login(self, user=None, remember=False, provider=None, form=None, force=False, **attrs):
@@ -356,6 +364,11 @@ class UsersFeature(Feature):
             if self.options["password_confirm_failed_message"]:
                 flash(self.options["password_confirm_failed_message"], "error")
             current_context.exit(trigger_action_group=trigger_action_group)
+
+    def check_signup_code(self, code):
+        if self.signup_code_checker:
+            return self.signup_code_checker(code)
+        return code in self.options['allowed_signup_codes']
 
     def validate_signuping_user(self, user, must_provide_password=False, flash_messages=True, raise_error=True):
         """Validates a new user object before saving it in the database.
