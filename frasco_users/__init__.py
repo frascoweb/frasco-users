@@ -1,12 +1,13 @@
 from frasco import (Feature, action, current_context, hook, listens_to, command,\
                     signal, flash, request, redirect, current_app, OptionMissingError,
                     InvalidOptionError, populate_obj, Markup, html_tag, url_for, session,
-                    lazy_translate, copy_extra_feature_options, translate)
+                    lazy_translate, copy_extra_feature_options, translate, current_app)
 from flask.ext import login
-from flask.ext.login import current_user, login_required, make_secure_token
+from flask.ext.login import _get_user, login_required, make_secure_token
 from flask.ext.bcrypt import Bcrypt
-from flask_oauth import OAuth
+from flask_oauthlib.client import OAuth
 from flask import has_request_context
+from werkzeug.local import LocalProxy
 from itsdangerous import URLSafeTimedSerializer, BadSignature
 import uuid
 import datetime
@@ -30,6 +31,9 @@ class SignupValidationFailedException(Exception):
     def __init__(self, reason):
         super(SignupValidationFailedException, self).__init__()
         self.reason = reason
+
+
+current_user = LocalProxy(lambda: current_app.features.users.current)
 
 
 class UsersFeature(Feature):
@@ -171,7 +175,7 @@ class UsersFeature(Feature):
     def current(self):
         """Returns the current user
         """
-        return self.current_override or current_user._get_current_object()
+        return self.current_override or _get_user()
 
     @current.setter
     def current(self, user):
@@ -183,7 +187,7 @@ class UsersFeature(Feature):
     def logged_in(self):
         """Checks if the user is logged in
         """
-        return current_user.is_authenticated()
+        return self.current.is_authenticated()
 
     def find_by_id(self, id):
         return self.query.get(id)
@@ -495,7 +499,7 @@ class UsersFeature(Feature):
     def update_password_from_form(self, user=None, form=None):
         """Updates the user password using a form
         """
-        user = user or current_user
+        user = user or self.current
         pwcol = self.options['password_column']
         pwcurrentcol = pwcol + "_current"
         pwconfirmcol = pwcol + "_confirm"
@@ -536,7 +540,7 @@ class UsersFeature(Feature):
         """Checks that an attribute of the current user is unique amongst all users.
         If no value is provided, the current form will be used.
         """
-        user = user or current_user
+        user = user or self.current
         if value is None:
             form = form or current_context.data.get("form")
             if not form:
@@ -555,14 +559,14 @@ class UsersFeature(Feature):
         """
         user = self.query.filter(**dict([(id_column, id)])).first()
         redirect_url = request.args.get('next') or url_for(self.options["redirect_after_login"])
-        if current_user.is_authenticated():
-            if user and user != current_user:
+        if self.logged_in():
+            if user and user != self.current:
                 if self.options["oauth_user_already_exists_message"]:
                     flash(self.options["oauth_user_already_exists_message"].format(provider=provider), "error")
                 return redirect(redirect_url)
-            if provider not in current_user.auth_providers:
-                current_user.auth_providers.append(provider)
-            current_app.features.models.save(current_user, **attrs)
+            if provider not in self.current.auth_providers:
+                self.current.auth_providers.append(provider)
+            current_app.features.models.save(self.current, **attrs)
         elif not user:
             return self.oauth_signup(provider, attrs, defaults)
         else:
