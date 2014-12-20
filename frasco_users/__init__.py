@@ -2,6 +2,7 @@ from frasco import (Feature, action, current_context, hook, listens_to, command,
                     signal, flash, request, redirect, current_app, OptionMissingError,
                     InvalidOptionError, populate_obj, Markup, html_tag, url_for, session,
                     lazy_translate, copy_extra_feature_options, translate, current_app)
+from frasco.utils import ContextStack
 from flask.ext import login
 from flask.ext.login import _get_user, login_required, make_secure_token
 from flask.ext.bcrypt import Bcrypt
@@ -34,6 +35,7 @@ class SignupValidationFailedException(Exception):
 
 
 current_user = LocalProxy(lambda: current_app.features.users.current)
+is_user_logged_in = LocalProxy(lambda: current_app.features.users.logged_in())
 
 
 class UsersFeature(Feature):
@@ -120,7 +122,10 @@ class UsersFeature(Feature):
         self.login_manager.login_message_category = "warning"
         self.login_manager.needs_refresh_message = self.options["fresh_login_required_message"]
         self.login_manager.needs_refresh_message_category = "warning"
-        self.current_override = None
+
+        # this allows to set a current user without a request context
+        self.current_user_stack = ContextStack()
+        self.login_context = self.current_user_stack.ctx
 
         if app.features.exists("emails"):
             app.features.emails.add_templates_from_package(__name__)
@@ -175,14 +180,7 @@ class UsersFeature(Feature):
     def current(self):
         """Returns the current user
         """
-        return self.current_override or _get_user()
-
-    @current.setter
-    def current(self, user):
-        if has_request_context():
-            login.login_user(user)
-        else:
-            self.current_override = user
+        return self.current_user_stack.top or _get_user()
 
     def logged_in(self):
         """Checks if the user is logged in
