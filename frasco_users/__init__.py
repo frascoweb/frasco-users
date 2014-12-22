@@ -7,9 +7,10 @@ from flask.ext import login
 from flask.ext.login import _get_user, login_required, make_secure_token
 from flask.ext.bcrypt import Bcrypt
 from flask_oauthlib.client import OAuth
-from flask import has_request_context
+from flask import has_request_context, _request_ctx_stack
 from werkzeug.local import LocalProxy
 from itsdangerous import URLSafeTimedSerializer, BadSignature
+from contextlib import contextmanager
 import uuid
 import datetime
 import os
@@ -124,8 +125,7 @@ class UsersFeature(Feature):
         self.login_manager.needs_refresh_message_category = "warning"
 
         # this allows to set a current user without a request context
-        self.current_user_stack = ContextStack()
-        self.login_context = self.current_user_stack.ctx
+        self.no_req_ctx_user_stack = ContextStack()
 
         if app.features.exists("emails"):
             app.features.emails.add_templates_from_package(__name__)
@@ -142,7 +142,8 @@ class UsersFeature(Feature):
             last_login_from=str,
             last_login_provider=str)
 
-        model.__bases__ = (UserMixin,) + model.__bases__
+        if UserMixin not in model.__bases__:
+            model.__bases__ = (UserMixin,) + model.__bases__
         model.auth_token_serializer = self.token_serializer
         self.query = app.features.models.query(self.options['model'])
 
@@ -180,7 +181,25 @@ class UsersFeature(Feature):
     def current(self):
         """Returns the current user
         """
-        return self.current_user_stack.top or _get_user()
+        if not has_request_context():
+            return self.no_req_ctx_user_stack.top
+        user_stack = getattr(_request_ctx_stack.top, 'user_stack', None)
+        if user_stack and user_stack.top:
+            return user_stack.top
+        return _get_user()
+
+    @contextmanager
+    def user_context(self, user):
+        stack = self.no_req_ctx_user_stack
+        if has_request_context():
+            if not hasattr(_request_ctx_stack.top, 'user_stack'):
+                _request_ctx_stack.top.user_stack = ContextStack()
+            stack = _request_ctx_stack.top.user_stack
+        stack.push(user)
+        try:
+            yield user
+        finally:
+            stack.pop()
 
     def logged_in(self):
         """Checks if the user is logged in
