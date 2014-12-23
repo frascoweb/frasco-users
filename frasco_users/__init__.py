@@ -54,6 +54,7 @@ class UsersFeature(Feature):
                 "email_is_unique": True,
                 "must_provide_username": True,
                 "must_provide_email": True,
+                "allow_email_or_username_login": True,
                 "allow_signup": True,
                 "require_code_on_signup": False,
                 "allowed_signup_codes": [],
@@ -210,15 +211,23 @@ class UsersFeature(Feature):
         return self.query.get(id)
 
     def find_by_username(self, username):
-        return self.query.filter(**dict([(self.options['username_column'], username)])).first()
+        ucol = self.options['username_column']
+        return self.query.filter({"$or": [
+            (ucol, username.strip()),
+            (ucol, username.strip().lower())
+        ]}).first()
 
     def find_by_email(self, email):
-        return self.query.filter(**dict([(self.options['email_column'], email)])).first()
+        emailcol = self.options['email_column']
+        return self.query.filter({"$or": [
+            (emailcol, email.strip()),
+            (emailcol, email.strip().lower())
+        ]}).first()
 
     def generate_user_token(self, user, salt=None):
         """Generates a unique token associated to the user
         """
-        return self.token_serializer.dumps(user.id, salt=salt)
+        return self.token_serializer.dumps(str(user.id), salt=salt)
 
     def find_by_token(self, token, salt=None, max_age=None):
         """Loads a user instance identified by the token generated using generate_user_token()
@@ -296,7 +305,15 @@ class UsersFeature(Feature):
                 return user
 
         if not self.options["disable_default_authentication"]:
-            user = self.find_by_username(username)
+            ucol = self.options['username_column']
+            emailcol = self.options['email_column']
+            filters = [(ucol, username.strip()),
+                       (ucol, username.strip().lower())]
+            if self.options['allow_email_or_username_login'] and ucol != emailcol:
+                filters.extend([(emailcol, username.strip()),
+                                (emailcol, username.strip().lower())])
+            user = self.query.filter({"$or": filters}).first()
+            current_app.logger.debug(user)
             if user and self.check_password(user, password):
                 return user
 
@@ -328,6 +345,7 @@ class UsersFeature(Feature):
         must_provide_password=True, provider=None, **attrs):
         ucol = self.options['username_column']
         pwcol = self.options['password_column']
+        emailcol = self.options['email_column']
         pwconfirmfield = pwcol + "_confirm"
 
         if not user and not username_ and not form:
@@ -359,6 +377,10 @@ class UsersFeature(Feature):
         populate_obj(user, attrs)
         if password:
             self.update_password(user, password)
+        if getattr(user, ucol, None):
+            setattr(user, ucol, getattr(user, ucol).strip())
+        if ucol != emailcol and getattr(user, emailcol, None):
+            setattr(user, emailcol, getattr(user, emailcol))
 
         try:
             self.validate_signuping_user(user, must_provide_password=must_provide_password)
@@ -415,7 +437,7 @@ class UsersFeature(Feature):
                 raise SignupValidationFailedException("username_missing")
             return False
         if ucol != emailcol and self.options["username_is_unique"]:
-            if self.query.filter(**dict([(ucol, username)])).count() > 0:
+            if self.query.filter({"$or": [(ucol, username), (ucol, username.lower())]}).count() > 0:
                 if flash_messages and self.options["signup_user_exists_message"]:
                     flash(self.options["signup_user_exists_message"], "error")
                 if raise_error:
@@ -428,7 +450,7 @@ class UsersFeature(Feature):
                 raise SignupValidationFailedException("email_missing")
             return False
         if self.options["email_is_unique"] and email:
-            if self.query.filter(**dict([(emailcol, email)])).count() > 0:
+            if self.query.filter({"$or": [(emailcol, email), (emailcol, email.lower())]}).count() > 0:
                 if flash_messages and self.options["signup_email_exists_message"]:
                     flash(self.options["signup_email_exists_message"], "error")
                 if raise_error:
@@ -457,7 +479,7 @@ class UsersFeature(Feature):
         """
         if not user and "form" in current_context.data and request.method == "POST":
             form = current_context.data.form
-            user = self.find_by_username(form[self.options["username_column"]].data)
+            user = self.find_by_email(form[self.options["email_column"]].data)
 
         if not user:
             raise InvalidOptionError("Invalid user in 'reset_password_token' action")
