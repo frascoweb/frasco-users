@@ -574,24 +574,34 @@ class UsersFeature(Feature):
         if not self.bcrypt.check_password_hash(getattr(user, pwcol), password):
             current_context.exit(trigger_action_group="password_mismatch")
 
-    @action("check_user_unique_attr", default_option="name")
-    def check_unique_attr(self, name, value=None, user=None, form=None, flash_msg=None):
+    @action("check_user_unique_attr", default_option="attrs")
+    def check_unique_attr(self, attrs, user=None, form=None, case_insensitive=True, flash_msg=None):
         """Checks that an attribute of the current user is unique amongst all users.
         If no value is provided, the current form will be used.
         """
         user = user or self.current
-        if value is None:
-            form = form or current_context.data.get("form")
-            if not form:
-                raise OptionMissingError("Missing 'value' option or form in 'check_user_unique_attr' action")
-            value = form[name].data
+        if not isinstance(attrs, (list, tuple, dict)):
+            attrs = [attrs]
 
-        if self.query.filter(**dict([(name, value), ("id__ne", user.id)])).count() > 0:
-            if flash_msg is None:
-                flash_msg = "The %s is already in use" % name
-            if flash_msg:
-                flash(flash_msg, "error")
-            current_context.exit(trigger_action_group="user_attr_not_unique")
+        for name in attrs:
+            if isinstance(attrs, dict):
+                value = attrs[name]
+            else:
+                form = form or current_context.data.get("form")
+                if not form:
+                    raise OptionMissingError("Missing 'value' option or form in 'check_user_unique_attr' action")
+                value = form[name].data
+
+            filters = (name, value.strip())
+            if case_insensitive:
+                filters = {"$or": [filters, (name, value.strip().lower())]}
+
+            if self.query.filter({"$and": [filters, ("id__ne", user.id)]}).count() > 0:
+                if flash_msg is None:
+                    flash_msg = "The %s is already in use" % name
+                if flash_msg:
+                    flash(flash_msg, "error")
+                current_context.exit(trigger_action_group="user_attr_not_unique")
 
     def oauth_login(self, provider, id_column, id, attrs, defaults):
         """Execute a login via oauth. If no user exists, oauth_signup() will be called
