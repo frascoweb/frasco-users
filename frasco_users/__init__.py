@@ -313,7 +313,6 @@ class UsersFeature(Feature):
                 filters.extend([(emailcol, username.strip()),
                                 (emailcol, username.strip().lower())])
             user = self.query.filter({"$or": filters}).first()
-            current_app.logger.debug(user)
             if user and self.check_password(user, password):
                 return user
 
