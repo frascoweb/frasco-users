@@ -56,6 +56,8 @@ class UsersFeature(Feature):
                 "must_provide_email": True,
                 "allow_email_or_username_login": True,
                 "allow_signup": True,
+                "forbidden_usernames": [],
+                "min_username_length": 1,
                 "require_code_on_signup": False,
                 "allowed_signup_codes": [],
                 "oauth_signup_only": False,
@@ -85,6 +87,7 @@ class UsersFeature(Feature):
                 "signup_disallowed_message": None,
                 "signup_user_exists_message": lazy_translate(u"An account using the same username already exists"),
                 "signup_email_exists_message": lazy_translate(u"An account using the same email already exists"),
+                "username_too_short_message": lazy_translate(u"The username is too short"),
                 "password_confirm_failed_message": lazy_translate(u"The two passwords do not match"),
                 "bad_signup_code_message": lazy_translate(u"The provided code is not valid"),
                 "reset_password_token_error_message": lazy_translate(u"This email does not exist in our database"),
@@ -429,12 +432,25 @@ class UsersFeature(Feature):
             if raise_error:
                 raise SignupValidationFailedException("password_missing")
             return False
-        if ucol != emailcol and self.options["must_provide_username"] and not username:
-            if flash_messages and self.options["must_provide_username_error_message"]:
-                flash(self.options["must_provide_username_error_message"], "error")
-            if raise_error:
-                raise SignupValidationFailedException("username_missing")
-            return False
+        if ucol != emailcol and self.options["must_provide_username"]:
+            if not username:
+                if flash_messages and self.options["must_provide_username_error_message"]:
+                    flash(self.options["must_provide_username_error_message"], "error")
+                if raise_error:
+                    raise SignupValidationFailedException("username_missing")
+                return False
+            if username.lower() in self.options['forbidden_usernames']:
+                if flash_messages and self.options["signup_user_exists_message"]:
+                    flash(self.options["signup_user_exists_message"], "error")
+                if raise_error:
+                    raise SignupValidationFailedException("username_forbidden")
+                return False
+            if len(username) < self.options['min_username_length']:
+                if flash_messages and self.options["username_too_short_message"]:
+                    flash(self.options["username_too_short_message"], "error")
+                if raise_error:
+                    raise SignupValidationFailedException("username_too_short")
+                return False
         if ucol != emailcol and self.options["username_is_unique"]:
             if self.query.filter({"$or": [(ucol, username), (ucol, username.lower())]}).count() > 0:
                 if flash_messages and self.options["signup_user_exists_message"]:

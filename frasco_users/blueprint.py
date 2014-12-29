@@ -33,9 +33,10 @@ def logout():
 
 @bp.view('/signup', template="users/signup.html")
 @with_actions([
-    {"form": {"name": "SignupForm", "obj": "$session[oauth_user_defaults]"}}])
+    {"form": {"name": "SignupForm", "obj": "$session[oauth_user_defaults]", "validate_on_submit": False}}])
 @pass_feature("users")
 def signup(users):
+    current_app.logger.debug("hello")
     if request.method == "GET" and not "oauth" in request.args:
         # signup was accessed directly so we ensure that oauth
         # params stored in session are cleaned. this can happen
@@ -60,7 +61,7 @@ def signup(users):
         return redirect(url_for(users.options.get("redirect_after_signup_disallowed") or\
             url_for("users.login", next=request.args.get("next"))))
 
-    if current_context["form"].is_submitted():
+    if current_context["form"].is_submitted() and current_context["form"].validate():
         user = users.model()
         if "oauth_user_defaults" in session:
             populate_obj(user, session["oauth_user_defaults"] or {})
