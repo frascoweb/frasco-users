@@ -36,7 +36,6 @@ def logout():
     {"form": {"name": "SignupForm", "obj": "$session[oauth_user_defaults]", "validate_on_submit": False}}])
 @pass_feature("users")
 def signup(users):
-    current_app.logger.debug("hello")
     if request.method == "GET" and not "oauth" in request.args:
         # signup was accessed directly so we ensure that oauth
         # params stored in session are cleaned. this can happen
