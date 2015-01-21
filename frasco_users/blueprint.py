@@ -80,7 +80,8 @@ def signup(users):
 @pass_feature("users", "models")
 def oauth_signup(users, models):
     if "oauth_user_attrs" not in session or users.options["oauth_must_signup"]:
-        return redirect(url_for(".signup", next=request.args.get("next")))
+        oauth = 1 if users.options["oauth_must_signup"] else 0
+        return redirect(url_for(".signup", oauth=oauth, next=request.args.get("next")))
 
     signup_url = url_for(".signup", oauth=1, next=request.args.get("next"))
     user = users.model()
