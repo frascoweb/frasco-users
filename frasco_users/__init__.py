@@ -495,6 +495,11 @@ class UsersFeature(Feature):
         if not user and "form" in current_context.data and request.method == "POST":
             form = current_context.data.form
             user = self.find_by_email(form[self.options["email_column"]].data)
+            if user is None:
+                if self.options["reset_password_token_error_message"]:
+                    flash(self.options["reset_password_token_error_message"], "error")
+                current_context.exit(trigger_action_group="reset_password_failed")
+                
 
         if not user:
             raise InvalidOptionError("Invalid user in 'reset_password_token' action")
@@ -531,7 +536,7 @@ class UsersFeature(Feature):
 
         user = self.find_by_token(token, salt="password-reset", max_age=self.options["reset_password_ttl"])
         if user is None:
-            if self.options["reset_password_token_error_message"]:
+            if self.options["reset_password_error_message"]:
                 flash(self.options["reset_password_error_message"], "error")
             current_context.exit(trigger_action_group="reset_password_failed")
 
