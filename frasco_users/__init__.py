@@ -562,18 +562,18 @@ class UsersFeature(Feature):
         elif not form:
             raise OptionMissingError("Missing a form in 'update_user_password' action")
 
-        password = form[pwcol].data
-        if pwcurrentcol in form and not self.bcrypt.check_password_hash(getattr(user, pwcol), form[pwcurrentcol].data):
+        current_pwd = getattr(user, pwcol)
+        if current_pwd and pwcurrentcol in form and not self.bcrypt.check_password_hash(current_pwd, form[pwcurrentcol].data):
             if self.options["update_password_error_message"]:
                 flash(self.options["update_password_error_message"], "error")
             current_context.exit(trigger_action_group="reset_password_current_mismatch")
         self.check_password_confirm(form, "reset_password_confirm_mismatch")
 
-        self.update_password(user, password)
+        self.update_password(user, form[pwcol].data)
         user.save()
         self.update_user_password_signal.send(self, user=user)
 
-    @action()
+    @action(default_option="user")
     def check_user_password(self, user, password=None, form=None):
         """Checks if the password matches the one of the user. If no password is
         provided, the current form will be used
@@ -586,7 +586,8 @@ class UsersFeature(Feature):
                 password = form[pwcol].data
             else:
                 raise OptionMissingError("Missing 'password' option or a form")
-        if not self.bcrypt.check_password_hash(getattr(user, pwcol), password):
+        current_pwd = getattr(user, pwcol)
+        if not current_pwd or not self.bcrypt.check_password_hash(current_pwd, password):
             current_context.exit(trigger_action_group="password_mismatch")
 
     @action("check_user_unique_attr", default_option="attrs")
