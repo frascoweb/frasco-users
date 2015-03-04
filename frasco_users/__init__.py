@@ -192,18 +192,24 @@ class UsersFeature(Feature):
             return user_stack.top
         return _get_user()
 
-    @contextmanager
-    def user_context(self, user):
+    def start_user_context(self, user):
         stack = self.no_req_ctx_user_stack
         if has_request_context():
             if not hasattr(_request_ctx_stack.top, 'user_stack'):
                 _request_ctx_stack.top.user_stack = ContextStack()
             stack = _request_ctx_stack.top.user_stack
         stack.push(user)
+
+    def stop_user_context(self):
+        self.no_req_ctx_user_stack.pop()
+
+    @contextmanager
+    def user_context(self, user):
+        self.start_user_context()
         try:
             yield user
         finally:
-            stack.pop()
+            self.stop_user_context()
 
     def logged_in(self):
         """Checks if the user is logged in
