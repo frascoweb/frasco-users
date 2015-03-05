@@ -205,7 +205,7 @@ class UsersFeature(Feature):
 
     @contextmanager
     def user_context(self, user):
-        self.start_user_context()
+        self.start_user_context(user)
         try:
             yield user
         finally:
