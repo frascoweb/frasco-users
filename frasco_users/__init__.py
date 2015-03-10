@@ -98,6 +98,7 @@ class UsersFeature(Feature):
                 "update_user_email_error_message": lazy_translate(u"An account using the same email already exists"),
                 "oauth_user_already_exists_message": lazy_translate(u"This %(provider)s account has already been used on a different account")}
 
+    init_signal = signal('users_init')
     signup_signal = signal('user_signup')
     reset_password_token_signal = signal('user_reset_password_token')
     reset_password_signal = signal('user_reset_password')
@@ -161,6 +162,8 @@ class UsersFeature(Feature):
 
         self.login_manager.user_loader(self.find_by_id)
         self.login_manager.token_loader(self.find_by_token)
+
+        self.init_signal.send(app)
 
     def init_admin(self, admin):
         admin.register_blueprint("frasco_users.admin:bp")
