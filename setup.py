@@ -19,9 +19,9 @@ setup(
     zip_safe=False,
     platforms='any',
     install_requires=[
-        # 'frasco',
-        # 'frasco-forms',
-        # 'frasco-models',
+        'frasco',
+        'frasco-forms',
+        'frasco-models',
         'Flask-Login>=0.2.11',
         'Flask-Bcrypt>=0.6.0',
         'Flask-OAuthlib>=0.8.0'
