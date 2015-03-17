@@ -633,11 +633,12 @@ class UsersFeature(Feature):
                     flash(flash_msg, "error")
                 current_context.exit(trigger_action_group="user_attr_not_unique")
 
-    def oauth_login(self, provider, id_column, id, attrs, defaults):
+    def oauth_login(self, provider, id_column, id, attrs, defaults, redirect_url=None):
         """Execute a login via oauth. If no user exists, oauth_signup() will be called
         """
         user = self.query.filter(**dict([(id_column, id)])).first()
-        redirect_url = request.args.get('next') or url_for(self.options["redirect_after_login"])
+        if not redirect_url:
+            redirect_url = request.args.get('next') or url_for(self.options["redirect_after_login"])
         if self.logged_in():
             if user and user != self.current:
                 if self.options["oauth_user_already_exists_message"]:
