@@ -335,7 +335,7 @@ class UsersFeature(Feature):
         user.last_login_provider = provider or self.options["default_auth_provider_name"]
         user.last_login_from = request.remote_addr
         populate_obj(user, attrs)
-        user.save()
+        current_app.features.models.backend.save(user)
         login.login_user(user, remember=remember, force=force)
 
     @action()
@@ -403,7 +403,7 @@ class UsersFeature(Feature):
         user.signup_from = request.remote_addr
         user.signup_provider = provider or self.options["default_auth_provider_name"]
         user.auth_providers = [user.signup_provider]
-        user.save()
+        current_app.features.models.backend.save(user)
         self.post_signup(user, login_user, send_email)
         return user
 
@@ -561,7 +561,7 @@ class UsersFeature(Feature):
         if not user:
             raise Exception("User '%s' not found" % username)
         self.update_password(user, password)
-        user.save()
+        current_app.features.models.backend.save(user)
 
     @action("update_user_password", default_option="user")
     def update_password_from_form(self, user=None, form=None):
@@ -584,7 +584,7 @@ class UsersFeature(Feature):
         self.check_password_confirm(form, "reset_password_confirm_mismatch")
 
         self.update_password(user, form[pwcol].data)
-        user.save()
+        current_app.features.models.backend.save(user)
         self.update_user_password_signal.send(self, user=user)
 
     @action(default_option="user")
