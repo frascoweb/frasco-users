@@ -58,6 +58,8 @@ class UsersFeature(Feature):
                 "allow_signup": True,
                 "forbidden_usernames": [],
                 "min_username_length": 1,
+                "allow_spaces_in_username": False,
+                "username_case_sensitive": False,
                 "require_code_on_signup": False,
                 "allowed_signup_codes": [],
                 "oauth_signup_only": False,
@@ -88,6 +90,7 @@ class UsersFeature(Feature):
                 "signup_user_exists_message": lazy_translate(u"An account using the same username already exists"),
                 "signup_email_exists_message": lazy_translate(u"An account using the same email already exists"),
                 "username_too_short_message": lazy_translate(u"The username is too short"),
+                "username_has_spaces_message": lazy_translate(u"The username cannot contain spaces"),
                 "password_confirm_failed_message": lazy_translate(u"The two passwords do not match"),
                 "bad_signup_code_message": lazy_translate(u"The provided code is not valid"),
                 "reset_password_token_error_message": lazy_translate(u"This email does not exist in our database"),
@@ -96,7 +99,8 @@ class UsersFeature(Feature):
                 "reset_password_success_message": lazy_translate(u"Password successfully resetted"),
                 "update_password_error_message": lazy_translate(u"Invalid current password"),
                 "update_user_email_error_message": lazy_translate(u"An account using the same email already exists"),
-                "oauth_user_already_exists_message": lazy_translate(u"This %(provider)s account has already been used on a different account")}
+                "oauth_user_already_exists_message": lazy_translate(u"This %(provider)s account has already been used on a different account"),
+                "enable_admin": True}
 
     init_signal = signal('users_init')
     signup_signal = signal('user_signup')
@@ -154,7 +158,8 @@ class UsersFeature(Feature):
 
         if self.options["username_column"] != self.options["email_column"]:
             app.features.models.ensure_model(model, **dict([
-                (self.options["username_column"], dict(type=str, index=True, unique=self.options["username_is_unique"]))]))
+                (self.options["username_column"], dict(type=str, index=True)),
+                (self.options["username_column"] + '_lcase', dict(type=str, index=True, unique=self.options["username_is_unique"]))]))
 
         app.features.models.ensure_model(model, **dict([
             (self.options["email_column"], dict(type=str, index=True, unique=self.options["email_is_unique"])),
@@ -166,7 +171,8 @@ class UsersFeature(Feature):
         self.init_signal.send(app)
 
     def init_admin(self, admin):
-        admin.register_blueprint("frasco_users.admin:bp")
+        if self.options['enable_admin']:
+            admin.register_blueprint("frasco_users.admin:bp")
 
     def create_oauth_app(self, name, login_view=None, **kwargs):
         app = self.oauth.remote_app(name, **kwargs)
@@ -224,17 +230,14 @@ class UsersFeature(Feature):
 
     def find_by_username(self, username):
         ucol = self.options['username_column']
-        return self.query.filter({"$or": [
-            (ucol, username.strip()),
-            (ucol, username.strip().lower())
-        ]}).first()
+        if not self.options['username_case_sensitive']:
+            ucol += '_lcase'
+            username = username.lower()
+        return self.query.filter((ucol, username.strip())).first()
 
     def find_by_email(self, email):
         emailcol = self.options['email_column']
-        return self.query.filter({"$or": [
-            (emailcol, email.strip()),
-            (emailcol, email.strip().lower())
-        ]}).first()
+        return self.query.filter((emailcol, email.strip().lower())).first()
 
     def generate_user_token(self, user, salt=None):
         """Generates a unique token associated to the user
@@ -319,11 +322,14 @@ class UsersFeature(Feature):
         if not self.options["disable_default_authentication"]:
             ucol = self.options['username_column']
             emailcol = self.options['email_column']
-            filters = [(ucol, username.strip()),
-                       (ucol, username.strip().lower())]
+            if not self.options['username_case_sensitive']:
+                ucol += '_lcase'
+                username = username.lower()
+            elif ucol == emailcol:
+                username = username.lower()
+            filters = [(ucol, username.strip())]
             if self.options['allow_email_or_username_login'] and ucol != emailcol:
-                filters.extend([(emailcol, username.strip()),
-                                (emailcol, username.strip().lower())])
+                filters.extend([(emailcol, username.strip().lower())])
             user = self.query.filter({"$or": filters}).first()
             if user and self.check_password(user, password):
                 return user
@@ -390,11 +396,13 @@ class UsersFeature(Feature):
             self.update_password(user, password)
         if getattr(user, ucol, None):
             setattr(user, ucol, getattr(user, ucol).strip())
-        if ucol != emailcol and getattr(user, emailcol, None):
-            setattr(user, emailcol, getattr(user, emailcol))
+        if ucol != emailcol:
+            setattr(user, ucol + '_lcase', getattr(user, ucol).lower())
+        if getattr(user, emailcol, None):
+            setattr(user, emailcol, getattr(user, emailcol).strip().lower())
 
         try:
-            self.validate_signuping_user(user, must_provide_password=must_provide_password)
+            self.validate_user(user, must_provide_password=must_provide_password)
         except SignupValidationFailedException as e:
             current_context["signup_error"] = e.reason
             current_context.exit(trigger_action_group="signup_validation_failed")
@@ -424,18 +432,25 @@ class UsersFeature(Feature):
             return self.signup_code_checker(code)
         return code in self.options['allowed_signup_codes']
 
-    def validate_signuping_user(self, user, must_provide_password=False, flash_messages=True, raise_error=True):
+    def validate_user(self, user=None, username=None, email=None, password=None, ignore_user_id=None,
+                      must_provide_password=False, flash_messages=True, raise_error=True):
         """Validates a new user object before saving it in the database.
-        Checks if a password is present unles must_provide_password is False.
-        Checks if the username is unqiue unless the option username_is_unique is set to False.
+        Checks if a password is present unless must_provide_password is False.
+        Checks if the username is unique unless the option username_is_unique is set to False.
         If the email column exists on the user object and the option email_is_unique is set to True,
         also checks if the email is unique.
         """
         ucol = self.options['username_column']
         emailcol = self.options['email_column']
-        username = getattr(user, ucol, None)
-        email = getattr(user, emailcol, None)
-        password = getattr(user, self.options["password_column"], None)
+        if user:
+            username = getattr(user, ucol, None)
+            email = getattr(user, emailcol, None)
+            password = getattr(user, self.options["password_column"], None)
+            ignore_user_id = getattr(user, 'id', None)
+        if username is not None:
+            username = username.strip()
+        if email is not None:
+            email = email.strip().lower()
 
         if must_provide_password and not password:
             if raise_error:
@@ -460,8 +475,19 @@ class UsersFeature(Feature):
                 if raise_error:
                     raise SignupValidationFailedException("username_too_short")
                 return False
-        if ucol != emailcol and self.options["username_is_unique"]:
-            if self.query.filter({"$or": [(ucol, username), (ucol, username.lower())]}).count() > 0:
+            if not self.options['allow_spaces_in_username'] and " " in username:
+                if flash_messages and self.options["username_has_spaces_message"]:
+                    flash(self.options["username_has_spaces_message"], "error")
+                if raise_error:
+                    raise SignupValidationFailedException("username_has_spaces")
+                return False
+        if ucol != emailcol and username and self.options["username_is_unique"]:
+            col = ucol if self.options["username_case_sensitive"] else ucol + '_lcase'
+            uname = username if self.options["username_case_sensitive"] else username.lower()
+            q = self.query.filter((col, uname))
+            if ignore_user_id:
+                q = q.filter(("id__ne", ignore_user_id))
+            if q.count() > 0:
                 if flash_messages and self.options["signup_user_exists_message"]:
                     flash(self.options["signup_user_exists_message"], "error")
                 if raise_error:
@@ -474,7 +500,10 @@ class UsersFeature(Feature):
                 raise SignupValidationFailedException("email_missing")
             return False
         if self.options["email_is_unique"] and email:
-            if self.query.filter({"$or": [(emailcol, email), (emailcol, email.lower())]}).count() > 0:
+            q = self.query.filter((emailcol, email))
+            if ignore_user_id:
+                q = q.filter(("id__ne", ignore_user_id))
+            if q.count() > 0:
                 if flash_messages and self.options["signup_email_exists_message"]:
                     flash(self.options["signup_email_exists_message"], "error")
                 if raise_error:
@@ -509,7 +538,6 @@ class UsersFeature(Feature):
                     flash(self.options["reset_password_token_error_message"], "error")
                 current_context.exit(trigger_action_group="reset_password_failed")
                 
-
         if not user:
             raise InvalidOptionError("Invalid user in 'reset_password_token' action")
 
@@ -521,10 +549,10 @@ class UsersFeature(Feature):
         return token
 
     @command("send-reset-password")
-    def send_reset_password_command(self, username, send_email=True):
-        user = self.find_by_username(username)
+    def send_reset_password_command(self, email, send_email=True):
+        user = self.find_by_email(email)
         if not user:
-            raise Exception("User '%s' not found" % username)
+            raise Exception("User '%s' not found" % email)
         token = self.gen_reset_password_token(user, send_email)
         command.echo(url_for("users.reset_password", token=token, _external=True))
 
@@ -532,7 +560,6 @@ class UsersFeature(Feature):
     def reset_password(self, token=None, login_user=None):
         """Resets the password of the user identified by the token
         """
-        ucol = self.options['username_column']
         pwcol = self.options['password_column']
         if not token:
             if "token" in request.view_args:
@@ -604,12 +631,40 @@ class UsersFeature(Feature):
         if not current_pwd or not self.bcrypt.check_password_hash(current_pwd, password):
             current_context.exit(trigger_action_group="password_mismatch")
 
+    @action(default_option="user")
+    def update_user_from_form(self, user, form=None):
+        ucol = self.options["username_column"]
+        emailcol = self.options["email_column"]
+        if not form and "form" in current_context.data and request.method == "POST":
+            form = current_context.data.form
+        else:
+            raise OptionMissingError("Missing form")
+
+        username = form[ucol].data if ucol in form else user.username
+        email = form[emailcol].data if emailcol in form else user.email
+
+        try:
+            self.validate_user(username=username, email=email, ignore_user_id=user.id)
+        except SignupValidationFailedException as e:
+            current_context["validation_error"] = e.reason
+            current_context.exit(trigger_action_group="user_update_validation_failed")
+
+        form.populate_obj(user)
+        if ucol in form:
+            setattr(user, ucol + '_lcase', form[ucol].data.lower().strip())
+        if emailcol in form:
+            setattr(user, emailcol, form[emailcol].data.lower().strip())
+
+        current_app.features.models.backend.save(user)
+
     @action("check_user_unique_attr", default_option="attrs")
-    def check_unique_attr(self, attrs, user=None, form=None, case_insensitive=True, flash_msg=None):
+    def check_unique_attr(self, attrs, user=None, form=None, flash_msg=None):
         """Checks that an attribute of the current user is unique amongst all users.
         If no value is provided, the current form will be used.
         """
         user = user or self.current
+        ucol = self.options["username_column"]
+        email = self.options["email_column"]
         if not isinstance(attrs, (list, tuple, dict)):
             attrs = [attrs]
 
@@ -622,9 +677,12 @@ class UsersFeature(Feature):
                     raise OptionMissingError("Missing 'value' option or form in 'check_user_unique_attr' action")
                 value = form[name].data
 
-            filters = (name, value.strip())
-            if case_insensitive:
-                filters = {"$or": [filters, (name, value.strip().lower())]}
+            if name == ucol and not self.options["username_case_sensitive"]:
+                filters = (ucol + '_lcase', value.strip().lower())
+            elif name == emailcol:
+                filters = (emailcol, value.strip().lower())
+            else:
+                filters = (name, value.strip())
 
             if self.query.filter({"$and": [filters, ("id__ne", user.id)]}).count() > 0:
                 if flash_msg is None:
