@@ -170,9 +170,11 @@ class UsersFeature(Feature):
 
         self.init_signal.send(app)
 
-    def init_admin(self, admin):
+    def init_admin(self, admin, app):
         if self.options['enable_admin']:
-            admin.register_blueprint("frasco_users.admin:bp")
+            from .admin import create_admin_blueprint
+            admin.register_blueprint(create_admin_blueprint(self))
+            admin.register_dashboard_counter('Users', lambda: self.query.count(), icon='fa-users')
 
     def create_oauth_app(self, name, login_view=None, **kwargs):
         app = self.oauth.remote_app(name, **kwargs)
@@ -595,24 +597,26 @@ class UsersFeature(Feature):
         """Updates the user password using a form
         """
         user = user or self.current
-        pwcol = self.options['password_column']
-        pwcurrentcol = pwcol + "_current"
-        pwconfirmcol = pwcol + "_confirm"
         if not form and "form" in current_context.data and request.method == "POST":
             form = current_context.data.form
         elif not form:
             raise OptionMissingError("Missing a form in 'update_user_password' action")
 
+        self._update_password_from_form(user, form)
+        current_app.features.models.backend.save(user)
+        self.update_user_password_signal.send(self, user=user)
+
+    def _update_password_from_form(self, user, form):
+        pwcol = self.options['password_column']
+        pwcurrentcol = pwcol + "_current"
+        pwconfirmcol = pwcol + "_confirm"
         current_pwd = getattr(user, pwcol)
         if current_pwd and pwcurrentcol in form and not self.bcrypt.check_password_hash(current_pwd, form[pwcurrentcol].data):
             if self.options["update_password_error_message"]:
                 flash(self.options["update_password_error_message"], "error")
             current_context.exit(trigger_action_group="reset_password_current_mismatch")
         self.check_password_confirm(form, "reset_password_confirm_mismatch")
-
         self.update_password(user, form[pwcol].data)
-        current_app.features.models.backend.save(user)
-        self.update_user_password_signal.send(self, user=user)
 
     @action(default_option="user")
     def check_user_password(self, user, password=None, form=None):
@@ -635,9 +639,10 @@ class UsersFeature(Feature):
     def update_user_from_form(self, user, form=None):
         ucol = self.options["username_column"]
         emailcol = self.options["email_column"]
+        pwcol = self.options['password_column']
         if not form and "form" in current_context.data and request.method == "POST":
             form = current_context.data.form
-        else:
+        elif not form:
             raise OptionMissingError("Missing form")
 
         username = form[ucol].data if ucol in form else user.username
@@ -649,7 +654,10 @@ class UsersFeature(Feature):
             current_context["validation_error"] = e.reason
             current_context.exit(trigger_action_group="user_update_validation_failed")
 
-        form.populate_obj(user)
+        if pwcol in form and form[pwcol].data:
+            self._update_password_from_form(user, form)
+
+        form.populate_obj(user, ignore_fields=[pwcol])
         if ucol in form:
             setattr(user, ucol + '_lcase', form[ucol].data.lower().strip())
         if emailcol in form:
