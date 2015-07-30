@@ -410,7 +410,10 @@ class UsersFeature(Feature):
             current_context.exit(trigger_action_group="signup_validation_failed")
 
         user.signup_at = datetime.datetime.now()
-        user.signup_from = request.remote_addr
+        try:
+            user.signup_from = request.remote_addr
+        except RuntimeError:
+            pass
         user.signup_provider = provider or self.options["default_auth_provider_name"]
         user.auth_providers = [user.signup_provider]
         current_app.features.models.backend.save(user)
