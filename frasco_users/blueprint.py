@@ -58,7 +58,7 @@ def signup(users):
         if users.options["signup_disallowed_message"]:
             flash(users.options["signup_disallowed_message"], "error")
         return redirect(url_for(users.options.get("redirect_after_signup_disallowed") or\
-            url_for("users.login", next=request.args.get("next"))))
+            "users.login", next=request.args.get("next")))
 
     if current_context["form"].is_submitted() and current_context["form"].validate():
         user = users.model()

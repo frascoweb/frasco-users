@@ -31,7 +31,7 @@ def create_admin_blueprint(users):
         form = bp.get_form_class()()
         current_context['form'] = form
         if form.validate_on_submit():
-            user = users.signup(form=form)
+            user = users.signup(form=form, login_user=False)
             return redirect(url_for('.edit', id=user.id))
 
     @bp.view("/<id>", template="admin/models_default/edit.html", methods=['GET', 'POST'])
