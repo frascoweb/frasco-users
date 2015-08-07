@@ -124,6 +124,9 @@ class UsersFeature(Feature):
         self.oauth_apps = []
         self.authentify_handlers = []
         self.signup_code_checker = None
+        self.user_validator = None
+        self.override_builtin_user_validation = False
+        self.login_validator = None
 
         self.login_manager = login.LoginManager(app)
         self.login_manager.login_view = self.options["login_view"]
@@ -306,6 +309,9 @@ class UsersFeature(Feature):
             raise OptionMissingError("Missing 'form' option or form for 'login' action")
 
         user = self.authentify(form[ucol].data, form[pwcol].data)
+
+        if user and self.login_validator and not self.login_validator(user):
+            user = None
         if not user:
             if self.options["login_error_message"]:
                 flash(self.options["login_error_message"], "error")
@@ -461,6 +467,14 @@ class UsersFeature(Feature):
             if raise_error:
                 raise SignupValidationFailedException("password_missing")
             return False
+
+        if self.user_validator and self.override_builtin_user_validation:
+            if not self.user_validator(username, email, password):
+                if raise_error:
+                    raise SignupValidationFailedException("failed_validation")
+                return False
+            return True
+
         if ucol != emailcol and self.options["must_provide_username"]:
             if not username:
                 if flash_messages and self.options["must_provide_username_error_message"]:
@@ -514,6 +528,11 @@ class UsersFeature(Feature):
                 if raise_error:
                     raise SignupValidationFailedException("email_exists")
                 return False
+
+        if self.user_validator and not self.user_validator(username, email, password):
+            if raise_error:
+                raise SignupValidationFailedException("failed_validation")
+            return False
 
         return True
 
