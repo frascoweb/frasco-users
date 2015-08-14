@@ -99,7 +99,7 @@ class UsersFeature(Feature):
                 "reset_password_success_message": lazy_translate(u"Password successfully resetted"),
                 "update_password_error_message": lazy_translate(u"Invalid current password"),
                 "update_user_email_error_message": lazy_translate(u"An account using the same email already exists"),
-                "oauth_user_already_exists_message": lazy_translate(u"This %(provider)s account has already been used on a different account"),
+                "oauth_user_already_exists_message": lazy_translate(u"This {provider} account has already been used on a different account"),
                 "enable_admin": True}
 
     init_signal = signal('users_init')
