@@ -19,6 +19,7 @@ from .jinja_ext import LoginRequiredExtension, AnonymousOnlyExtension
 
 
 class UserMixin(login.UserMixin):
+    @property
     def is_active(self):
         is_active = getattr(self, 'active_account', None)
         if is_active is None:
@@ -228,7 +229,7 @@ class UsersFeature(Feature):
     def logged_in(self):
         """Checks if the user is logged in
         """
-        return self.current.is_authenticated()
+        return self.current.is_authenticated
 
     def find_by_id(self, id):
         return self.query.get(id)
