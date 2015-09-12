@@ -22,8 +22,8 @@ setup(
         'frasco',
         'frasco-forms',
         'frasco-models>=0.2',
-        'Flask-Login~=0.3.0',
-        'Flask-Bcrypt~=0.6.0',
-        'Flask-OAuthlib~=0.9.0'
+        'Flask-Login>=0.3.0',
+        'Flask-Bcrypt>=0.6.0',
+        'Flask-OAuthlib>=0.9.0'
     ]
 )
