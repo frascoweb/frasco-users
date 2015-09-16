@@ -3,6 +3,7 @@ from frasco import (Feature, action, current_context, hook, listens_to, command,
                     InvalidOptionError, populate_obj, Markup, html_tag, url_for, session,
                     lazy_translate, copy_extra_feature_options, translate, current_app)
 from frasco.utils import ContextStack
+from frasco_models import transaction, as_transaction, save_model
 from flask.ext import login
 from flask.ext.login import _get_user, login_required, make_secure_token
 from flask.ext.bcrypt import Bcrypt
@@ -343,6 +344,7 @@ class UsersFeature(Feature):
             if user and self.check_password(user, password):
                 return user
 
+    @as_transaction
     def _login(self, user, provider=None, remember=False, force=False, **attrs):
         """Updates user attributes and login the user in flask-login
         """
@@ -350,7 +352,7 @@ class UsersFeature(Feature):
         user.last_login_provider = provider or self.options["default_auth_provider_name"]
         user.last_login_from = request.remote_addr
         populate_obj(user, attrs)
-        current_app.features.models.backend.save(user)
+        save_model(user)
         login.login_user(user, remember=remember, force=force)
 
     @action()
@@ -368,64 +370,65 @@ class UsersFeature(Feature):
     @command.arg("password")
     @action()
     def signup(self, username_=None, password=None, user=None, form=None, login_user=None, send_email=None,\
-        must_provide_password=True, provider=None, **attrs):
-        ucol = self.options['username_column']
-        pwcol = self.options['password_column']
-        emailcol = self.options['email_column']
-        pwconfirmfield = pwcol + "_confirm"
+               must_provide_password=True, provider=None, **attrs):
+        with transaction():
+            ucol = self.options['username_column']
+            pwcol = self.options['password_column']
+            emailcol = self.options['email_column']
+            pwconfirmfield = pwcol + "_confirm"
 
-        if not user and not username_ and not form:
-            if "form" in current_context.data and request.method == "POST":
-                form = current_context.data.form
-            else:
-                raise OptionMissingError(("Missing 'username' and 'password' options or "
-                                          "'form' option or form for 'signup' action"))
+            if not user and not username_ and not form:
+                if "form" in current_context.data and request.method == "POST":
+                    form = current_context.data.form
+                else:
+                    raise OptionMissingError(("Missing 'username' and 'password' options or "
+                                              "'form' option or form for 'signup' action"))
 
-        if isinstance(username_, self.model):
-            user = username_
-            username_ = None
-        if not user:
-            user = self.model()
-        if username_:
-            setattr(user, ucol, username_)
+            if isinstance(username_, self.model):
+                user = username_
+                username_ = None
+            if not user:
+                user = self.model()
+            if username_:
+                setattr(user, ucol, username_)
 
-        if form:
-            if must_provide_password:
-                # the password field is manually validated to allow for cases when the
-                # password is not provided and not required (ie. oauth login)
-                if pwcol not in form or not form[pwcol].data.strip():
-                    form[pwcol].errors.append(form[pwcol].gettext('This field is required.'))
-                    current_context.exit(trigger_action_group="form_validation_failed")
-                self.check_password_confirm(form, "signup_pwd_mismatch")
-                password = form[pwcol].data
-            form.populate_obj(user, ignore_fields=[pwcol, pwconfirmfield])
+            if form:
+                if must_provide_password:
+                    # the password field is manually validated to allow for cases when the
+                    # password is not provided and not required (ie. oauth login)
+                    if pwcol not in form or not form[pwcol].data.strip():
+                        form[pwcol].errors.append(form[pwcol].gettext('This field is required.'))
+                        current_context.exit(trigger_action_group="form_validation_failed")
+                    self.check_password_confirm(form, "signup_pwd_mismatch")
+                    password = form[pwcol].data
+                form.populate_obj(user, ignore_fields=[pwcol, pwconfirmfield])
 
-        populate_obj(user, attrs)
-        if password:
-            self.update_password(user, password)
-        if getattr(user, ucol, None):
-            setattr(user, ucol, getattr(user, ucol).strip())
-        if ucol != emailcol:
-            setattr(user, ucol + '_lcase', getattr(user, ucol).lower())
-        if getattr(user, emailcol, None):
-            setattr(user, emailcol, getattr(user, emailcol).strip().lower())
+            populate_obj(user, attrs)
+            if password:
+                self.update_password(user, password)
+            if getattr(user, ucol, None):
+                setattr(user, ucol, getattr(user, ucol).strip())
+            if ucol != emailcol:
+                setattr(user, ucol + '_lcase', getattr(user, ucol).lower())
+            if getattr(user, emailcol, None):
+                setattr(user, emailcol, getattr(user, emailcol).strip().lower())
 
-        try:
-            self.validate_user(user, must_provide_password=must_provide_password)
-        except SignupValidationFailedException as e:
-            current_context["signup_error"] = e.reason
-            current_context.exit(trigger_action_group="signup_validation_failed")
+            try:
+                self.validate_user(user, must_provide_password=must_provide_password)
+            except SignupValidationFailedException as e:
+                current_context["signup_error"] = e.reason
+                current_context.exit(trigger_action_group="signup_validation_failed")
 
-        user.signup_at = datetime.datetime.now()
-        try:
-            user.signup_from = request.remote_addr
-        except RuntimeError:
-            pass
-        user.signup_provider = provider or self.options["default_auth_provider_name"]
-        user.auth_providers = [user.signup_provider]
-        current_app.features.models.backend.save(user)
-        self.post_signup(user, login_user, send_email)
-        return user
+            user.signup_at = datetime.datetime.now()
+            try:
+                user.signup_from = request.remote_addr
+            except RuntimeError:
+                pass
+            user.signup_provider = provider or self.options["default_auth_provider_name"]
+            user.auth_providers = [user.signup_provider]
+            save_model(user)
+            self.post_signup(user, login_user, send_email)
+            return user
 
     def check_password_confirm(self, form, trigger_action_group=None):
         """Checks that the password and the confirm password match in
@@ -609,13 +612,15 @@ class UsersFeature(Feature):
 
     @command("reset-password")
     def reset_password_command(self, username, password):
-        user = self.find_by_username(username)
-        if not user:
-            raise Exception("User '%s' not found" % username)
-        self.update_password(user, password)
-        current_app.features.models.backend.save(user)
+        with transaction():
+            user = self.find_by_username(username)
+            if not user:
+                raise Exception("User '%s' not found" % username)
+            self.update_password(user, password)
+            save_model(user)
 
     @action("update_user_password", default_option="user")
+    @as_transaction
     def update_password_from_form(self, user=None, form=None):
         """Updates the user password using a form
         """
@@ -626,7 +631,7 @@ class UsersFeature(Feature):
             raise OptionMissingError("Missing a form in 'update_user_password' action")
 
         self._update_password_from_form(user, form)
-        current_app.features.models.backend.save(user)
+        save_model(user)
         self.update_user_password_signal.send(self, user=user)
 
     def _update_password_from_form(self, user, form):
@@ -659,6 +664,7 @@ class UsersFeature(Feature):
             current_context.exit(trigger_action_group="password_mismatch")
 
     @action(default_option="user")
+    @as_transaction
     def update_user_from_form(self, user, form=None):
         ucol = self.options["username_column"]
         emailcol = self.options["email_column"]
@@ -686,7 +692,7 @@ class UsersFeature(Feature):
         if emailcol in form:
             setattr(user, emailcol, form[emailcol].data.lower().strip())
 
-        current_app.features.models.backend.save(user)
+        save_model(user)
 
     @action("check_user_unique_attr", default_option="attrs")
     def check_unique_attr(self, attrs, user=None, form=None, flash_msg=None):
