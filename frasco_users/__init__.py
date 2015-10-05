@@ -230,7 +230,7 @@ class UsersFeature(Feature):
     def logged_in(self):
         """Checks if the user is logged in
         """
-        return self.current.is_authenticated
+        return self.current and self.current.is_authenticated
 
     def find_by_id(self, id):
         return self.query.get(id)
