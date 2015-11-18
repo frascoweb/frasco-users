@@ -183,7 +183,8 @@ class UsersFeature(Feature):
 
     def create_oauth_app(self, name, login_view=None, **kwargs):
         app = self.oauth.remote_app(name, **kwargs)
-        self.oauth_apps.append((name, login_view))
+        if login_view:
+            self.oauth_apps.append((name, login_view))
         return app
 
     def add_authentification_handler(self, callback, only=False):
@@ -217,7 +218,11 @@ class UsersFeature(Feature):
         stack.push(user)
 
     def stop_user_context(self):
-        self.no_req_ctx_user_stack.pop()
+        stack = self.no_req_ctx_user_stack
+        if has_request_context():
+            _request_ctx_stack.top.user_stack.pop()
+        else:
+            self.no_req_ctx_user_stack.pop()
 
     @contextmanager
     def user_context(self, user):
