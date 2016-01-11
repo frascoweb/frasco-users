@@ -431,7 +431,8 @@ class UsersFeature(Feature):
                 pass
             user.signup_provider = provider or self.options["default_auth_provider_name"]
             user.auth_providers = [user.signup_provider]
-            save_model(user)
+            with transaction():
+                save_model(user)
             self.post_signup(user, login_user, send_email)
             return user
 
