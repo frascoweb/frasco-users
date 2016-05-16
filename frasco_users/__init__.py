@@ -557,7 +557,8 @@ class UsersFeature(Feature):
 
         to_email = getattr(user, self.options["email_column"], None)
         if to_email and ((send_email is None and self.options["send_welcome_email"]) or send_email):
-            current_app.features.emails.send(to_email, "users/welcome.txt", user=user)
+            template = "users/welcome.txt" if self.options["send_welcome_email"] == True else self.options["send_welcome_email"]
+            current_app.features.emails.send(to_email, template, user=user)
 
     @action(default_option="user")
     def gen_reset_password_token(self, user=None, send_email=None):
