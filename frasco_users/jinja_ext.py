@@ -1,7 +1,7 @@
 from jinja2 import nodes
 from jinja2.ext import Extension
 from frasco.templating import jinja_fragment_extension
-from flask.ext.login import current_user
+from flask_login import current_user
 
 
 class LoginRequiredExtension(Extension):

@@ -4,9 +4,9 @@ from frasco import (Feature, action, current_context, hook, listens_to, command,
                     lazy_translate, copy_extra_feature_options, translate, current_app)
 from frasco.utils import ContextStack
 from frasco_models import transaction, as_transaction, save_model
-from flask.ext import login
-from flask.ext.login import _get_user, login_required, make_secure_token
-from flask.ext.bcrypt import Bcrypt
+import flask_login
+from flask_login import _get_user, login_required, make_secure_token
+from flask_bcrypt import Bcrypt
 from flask_oauthlib.client import OAuth
 from flask import has_request_context, _request_ctx_stack
 from werkzeug.local import LocalProxy
@@ -19,7 +19,7 @@ from .blueprint import bp
 from .jinja_ext import LoginRequiredExtension, AnonymousOnlyExtension
 
 
-class UserMixin(login.UserMixin):
+class UserMixin(flask_login.UserMixin):
     @property
     def is_active(self):
         is_active = getattr(self, 'active_account', None)
@@ -130,7 +130,7 @@ class UsersFeature(Feature):
         self.override_builtin_user_validation = False
         self.login_validator = None
 
-        self.login_manager = login.LoginManager(app)
+        self.login_manager = flask_login.LoginManager(app)
         self.login_manager.login_view = self.options["login_view"]
         self.login_manager.refresh_view = self.options["login_view"]
         self.login_manager.login_message = self.options["login_required_message"]
@@ -358,7 +358,7 @@ class UsersFeature(Feature):
         user.last_login_from = request.remote_addr
         populate_obj(user, attrs)
         save_model(user)
-        login.login_user(user, remember=remember, force=force)
+        flask_login.login_user(user, remember=remember, force=force)
 
     @action()
     def confirm_login(self):
@@ -368,7 +368,7 @@ class UsersFeature(Feature):
 
     @action()
     def logout(self):
-        login.logout_user()
+        flask_login.logout_user()
 
     @command(with_request_ctx=True)
     @command.arg("username_")
@@ -614,7 +614,7 @@ class UsersFeature(Feature):
         self.update_password_from_form(user)
         self.reset_password_signal.send(self, user=user)
         if (login_user is None and self.options["login_user_on_reset_password"]) or login_user:
-            login.login_user(user)
+            flask_login.login_user(user)
         return user
 
     @command("reset-password")
