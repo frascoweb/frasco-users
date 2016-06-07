@@ -375,7 +375,7 @@ class UsersFeature(Feature):
     @command.arg("password")
     @action()
     def signup(self, username_=None, password=None, user=None, form=None, login_user=None, send_email=None,\
-               must_provide_password=True, provider=None, **attrs):
+               must_provide_password=True, provider=None, validate_user=True, **attrs):
         with transaction():
             ucol = self.options['username_column']
             pwcol = self.options['password_column']
@@ -418,11 +418,12 @@ class UsersFeature(Feature):
             if getattr(user, emailcol, None):
                 setattr(user, emailcol, getattr(user, emailcol).strip().lower())
 
-            try:
-                self.validate_user(user, must_provide_password=must_provide_password)
-            except SignupValidationFailedException as e:
-                current_context["signup_error"] = e.reason
-                current_context.exit(trigger_action_group="signup_validation_failed")
+            if validate_user:
+                try:
+                    self.validate_user(user, must_provide_password=must_provide_password)
+                except SignupValidationFailedException as e:
+                    current_context["signup_error"] = e.reason
+                    current_context.exit(trigger_action_group="signup_validation_failed")
 
             user.signup_at = datetime.datetime.now()
             try:
