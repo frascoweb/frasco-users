@@ -337,14 +337,15 @@ class UsersFeature(Feature):
         if not self.options["disable_default_authentication"]:
             ucol = self.options['username_column']
             emailcol = self.options['email_column']
+            username = username.strip()
             if ucol == emailcol:
                 username = username.lower()
             elif not self.options['username_case_sensitive']:
                 ucol += '_lcase'
                 username = username.lower()
-            filters = [(ucol, username.strip())]
-            if self.options['allow_email_or_username_login'] and ucol != emailcol:
-                filters.extend([(emailcol, username.strip().lower())])
+            filters = [(ucol, username)]
+            if self.options['allow_email_or_username_login'] and ucol != emailcol and username:
+                filters.extend([(emailcol, username.lower())])
             user = self.query.filter({"$or": filters}).first()
             if user and self.check_password(user, password):
                 return user
