@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='frasco-users',
-    version='0.5.11',
+    version='0.5.12',
     url='http://github.com/frascoweb/frasco-users',
     license='MIT',
     author='Maxime Bouroumeau-Fuseau',
@@ -19,11 +19,11 @@ setup(
     zip_safe=False,
     platforms='any',
     install_requires=[
-        'frasco',
-        'frasco-forms>=0.1.2',
-        'frasco-models>=0.4.0',
-        'Flask-Login>=0.3.0',
-        'Flask-Bcrypt>=0.6.0',
-        'Flask-OAuthlib>=0.9.0'
+        'frasco~=0.6.0',
+        'frasco-forms~=0.1.2',
+        'frasco-models~=0.4.0',
+        'Flask-Login~=0.3.0',
+        'Flask-Bcrypt~=0.7.0',
+        'Flask-OAuthlib~=0.9.0'
     ]
 )
