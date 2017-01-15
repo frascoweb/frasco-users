@@ -1,4 +1,4 @@
-from frasco import (Feature, action, current_context, hook, listens_to, command,\
+from frasco import (Feature, action, current_context, hook, listens_to, command,
                     signal, flash, request, redirect, current_app, OptionMissingError,
                     InvalidOptionError, populate_obj, Markup, html_tag, url_for, session,
                     lazy_translate, copy_extra_feature_options, translate, current_app)
@@ -64,6 +64,8 @@ class UsersFeature(Feature):
                 "username_case_sensitive": False,
                 "require_code_on_signup": False,
                 "allowed_signup_codes": [],
+                "rate_limit_count": None,
+                "rate_limit_period": 60,
                 "oauth_signup_only": False,
                 "oauth_login_only": False,
                 "oauth_must_signup": False,
@@ -95,6 +97,7 @@ class UsersFeature(Feature):
                 "username_has_spaces_message": lazy_translate(u"The username cannot contain spaces"),
                 "password_confirm_failed_message": lazy_translate(u"The two passwords do not match"),
                 "bad_signup_code_message": lazy_translate(u"The provided code is not valid"),
+                "rate_limit_reached_message": lazy_translate(u"Too many accounts have been created from this location in a too short period. Please, try again later"),
                 "reset_password_token_error_message": lazy_translate(u"This email does not exist in our database"),
                 "reset_password_token_success_message": lazy_translate(u"An email has been sent to your email address with a link to reset your password"),
                 "reset_password_error_message": lazy_translate(u"Invalid or expired link to reset your password"),
@@ -390,6 +393,14 @@ class UsersFeature(Feature):
                     raise OptionMissingError(("Missing 'username' and 'password' options or "
                                               "'form' option or form for 'signup' action"))
 
+            try:
+                remote_addr = request.remote_addr
+            except RuntimeError:
+                remote_addr = None
+
+            if remote_addr and self.options["rate_limit_count"]:
+                self.check_rate_limit(remote_addr, "signup_rate_limited")
+
             if isinstance(username_, self.model):
                 user = username_
                 username_ = None
@@ -427,10 +438,7 @@ class UsersFeature(Feature):
                     current_context.exit(trigger_action_group="signup_validation_failed")
 
             user.signup_at = datetime.datetime.now()
-            try:
-                user.signup_from = request.remote_addr
-            except RuntimeError:
-                pass
+            user.signup_from = remote_addr
             user.signup_provider = provider or self.options["default_auth_provider_name"]
             user.auth_providers = [user.signup_provider]
             with transaction():
@@ -454,6 +462,14 @@ class UsersFeature(Feature):
         if self.signup_code_checker:
             return self.signup_code_checker(code)
         return code in self.options['allowed_signup_codes']
+
+    def check_rate_limit(self, ip, trigger_action_group=None):
+        since = datetime.datetime.now() - datetime.timedelta(seconds=self.options['rate_limit_period'])
+        count = self.query.filter(signup_from=ip, signup_at__gte=since).count()
+        if count >= self.options['rate_limit_count']:
+            if self.options["rate_limit_reached_message"]:
+                flash(self.options["rate_limit_reached_message"], "error")
+            current_context.exit(trigger_action_group=trigger_action_group)
 
     def validate_user(self, user=None, username=None, email=None, password=None, ignore_user_id=None,
                       must_provide_password=False, flash_messages=True, raise_error=True):
