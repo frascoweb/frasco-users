@@ -57,6 +57,7 @@ class UsersFeature(Feature):
                 "must_provide_username": True,
                 "must_provide_email": True,
                 "allow_email_or_username_login": True,
+                "allow_login": True,
                 "allow_signup": True,
                 "forbidden_usernames": [],
                 "min_username_length": 1,
@@ -77,6 +78,7 @@ class UsersFeature(Feature):
                 "remember_days": 365,
                 "reset_password_ttl": 86400,
                 "redirect_after_login": "index",
+                "redirect_after_login_disallowed": None,
                 "redirect_after_signup": "index",
                 "redirect_after_signup_disallowed": None, # go to login
                 "redirect_after_logout": "index",

@@ -18,6 +18,11 @@ def make_redirect_url(value):
 @with_actions("form_submitted", ["users.login"])
 @pass_feature("users")
 def login(users):
+    if not users.options["allow_login"]:
+        if users.options["login_disallowed_message"]:
+            flash(users.options["login_disallowed_message"], "error")
+        return redirect(url_for(users.options.get("redirect_after_login_disallowed") or\
+            "index", next=request.args.get("next")))
     redirect_url = request.args.get("next") or make_redirect_url(users.options["redirect_after_login"])
     if users.logged_in() or request.method == "POST":
         return redirect(redirect_url)
