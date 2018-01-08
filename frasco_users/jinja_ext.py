@@ -25,7 +25,7 @@ class LoginRequiredExtension(Extension):
         test = nodes.Getattr(nodes.Name("current_user", "load", lineno=lineno), \
                     "is_authenticated", "load", lineno=lineno)
 
-        return nodes.If(test, body, else_, lineno=lineno)
+        return nodes.If(test, body, [], else_, lineno=lineno)
 
 
 @jinja_fragment_extension("anonymous_only", endtag="endanon")
