@@ -2,6 +2,7 @@ from frasco import (Blueprint, with_actions, redirect, request, current_app,\
                     url_for, flash, current_context, pass_feature, session,\
                     populate_obj, ContextExitException)
 from frasco.expression import compile_expr
+import datetime
 
 
 bp = Blueprint("users", __name__, template_folder="templates")
@@ -25,6 +26,13 @@ def login(users):
             "index", next=request.args.get("next")))
     redirect_url = request.args.get("next") or make_redirect_url(users.options["redirect_after_login"])
     if users.logged_in() or request.method == "POST":
+        if (users.options['expire_password_after'] and users.current.last_password_change_at and \
+          (datetime.datetime.utcnow() - users.current.last_password_change_at).total_seconds() > users.options['expire_password_after']) \
+          or users.current.must_reset_password_at_login:
+            token = users._gen_reset_password_token(users.current)
+            users.logout()
+            flash(users.options['password_expired_message'], 'error')
+            return redirect(url_for('.reset_password', token=token))
         return redirect(redirect_url)
 
 

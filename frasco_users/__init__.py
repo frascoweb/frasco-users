@@ -15,6 +15,7 @@ from contextlib import contextmanager
 import uuid
 import datetime
 import os
+import re
 from .blueprint import bp
 from .jinja_ext import LoginRequiredExtension, AnonymousOnlyExtension
 
@@ -29,6 +30,13 @@ class UserMixin(flask_login.UserMixin):
 
     def get_auth_token(self):
         return self.auth_token_serializer.dumps(self.get_id())
+
+
+class PasswordValidationFailedException(Exception):
+    def __init__(self, reason, rule=None):
+        super(PasswordValidationFailedException, self).__init__()
+        self.reason = reason
+        self.rule = rule
 
 
 class SignupValidationFailedException(Exception):
@@ -63,6 +71,11 @@ class UsersFeature(Feature):
                 "min_username_length": 1,
                 "allow_spaces_in_username": False,
                 "username_case_sensitive": False,
+                "validate_password_regexps": None,
+                "prevent_password_reuse": False,
+                "max_password_reuse_saved": None,
+                "min_time_between_password_change": None,
+                "expire_password_after": None,
                 "require_code_on_signup": False,
                 "allowed_signup_codes": [],
                 "rate_limit_count": None,
@@ -90,7 +103,11 @@ class UsersFeature(Feature):
                 "login_disallowed_message": None,
                 "login_required_message": lazy_translate(u"Please log in to access this page"),
                 "fresh_login_required_message": lazy_translate(u"Please reauthenticate to access this page"),
+                "password_expired_message": lazy_translate(u"Your password has expired, please enter a new one"),
                 "must_provide_username_error_message": lazy_translate(u"A username must be provided"),
+                "password_reused_message": lazy_translate(u"You cannot use a password which you have previously used"),
+                "min_time_between_password_change_message": lazy_translate(u"You have changed your password too recently"),
+                "validate_password_regexps_message": lazy_translate(u"The password does not respect the following rule: {rule}"),
                 "must_provide_email_error_message": lazy_translate(u"An email address must be provided"),
                 "signup_disallowed_message": None,
                 "signup_user_exists_message": lazy_translate(u"An account using the same username already exists"),
@@ -134,6 +151,7 @@ class UsersFeature(Feature):
         self.user_validator = None
         self.override_builtin_user_validation = False
         self.login_validator = None
+        self.password_validator = None
 
         self.login_manager = flask_login.LoginManager(app)
         self.login_manager.login_view = self.options["login_view"]
@@ -159,7 +177,12 @@ class UsersFeature(Feature):
             auth_providers=list,
             last_login_at=datetime.datetime,
             last_login_from=str,
-            last_login_provider=str)
+            last_login_provider=str,
+            last_password_change_at=datetime.datetime,
+            must_reset_password_at_login=bool)
+
+        if self.options['prevent_password_reuse']:
+            app.features.models.ensure_model(self.options["model"], previous_passwords=list)
 
         if UserMixin not in model.__bases__:
             model.__bases__ = (UserMixin,) + model.__bases__
@@ -273,11 +296,57 @@ class UsersFeature(Feature):
             return None
         return self.find_by_id(id)
 
-    def update_password(self, user, password):
+    def validate_password(self, user, password, pwhash, flash_messages=True, raise_error=True):
+        pwcol = self.options["password_column"]
+        pwhash = self.bcrypt.generate_password_hash(password) if not pwhash else pwhash
+
+        if self.options['min_time_between_password_change'] and user.last_password_change_at:
+            if (datetime.datetime.utcnow() - user.last_password_change_at).total_seconds() < self.options['min_time_between_password_change']:
+                if flash_messages and self.options['min_time_between_password_change_message']:
+                    flash(self.options['min_time_between_password_change_message'], 'error')
+                if raise_error:
+                    raise PasswordValidationFailedException("password_change_too_soon")
+                return False
+
+        if self.options['validate_password_regexps']:
+            for pattern, label in self.options['validate_password_regexps']:
+                if not re.match(pattern, password):
+                    if flash_messages and self.options['validate_password_regexps_message']:
+                        flash(self.options['validate_password_regexps_message'].format(rule=label), 'error')
+                    if raise_error:
+                        raise PasswordValidationFailedException("invalid_password", label)
+                    return False
+
+        if self.options['prevent_password_reuse']:
+            for oldhash in [getattr(user, pwcol)] + (user.previous_passwords or []):
+                if self.bcrypt.check_password_hash(oldhash, password):
+                    if flash_messages and self.options['password_reused_message']:
+                        flash(self.options['password_reused_message'], 'error')
+                    if raise_error:
+                        raise PasswordValidationFailedException("password_reused")
+                    return False
+
+        if self.password_validator and not self.password_validator(password):
+            if raise_error:
+                raise PasswordValidationFailedException("password_validator_failed")
+            return False
+
+        return True
+
+    def update_password(self, user, password, skip_validation=False):
         """Updates the password of a user
         """
         pwcol = self.options["password_column"]
-        setattr(user, pwcol, self.bcrypt.generate_password_hash(password))
+        pwhash = self.bcrypt.generate_password_hash(password)
+        if not skip_validation:
+            self.validate_password(user, password, pwhash)
+        if self.options['prevent_password_reuse']:
+            user.previous_passwords = [getattr(user, pwcol)] + (user.previous_passwords or [])
+            if self.options['max_password_reuse_saved']:
+                user.previous_passwords = user.previous_passwords[:self.options['max_password_reuse_saved']]
+        setattr(user, pwcol, pwhash)
+        user.last_password_change_at = datetime.datetime.utcnow()
+        user.must_reset_password_at_login = False
 
     def check_password(self, user, password):
         pwcol = self.options['password_column']
@@ -424,7 +493,12 @@ class UsersFeature(Feature):
 
             populate_obj(user, attrs)
             if password:
-                self.update_password(user, password)
+                try:
+                    self.update_password(user, password)
+                except PasswordValidationFailedException as e:
+                    current_context["password_validation_error"] = e.reason
+                    current_context.exit(trigger_action_group="password_validation_failed")
+
             if getattr(user, ucol, None):
                 setattr(user, ucol, getattr(user, ucol).strip())
             if ucol != emailcol:
@@ -580,6 +654,9 @@ class UsersFeature(Feature):
             template = "users/welcome.txt" if self.options["send_welcome_email"] == True else self.options["send_welcome_email"]
             current_app.features.emails.send(to_email, template, user=user)
 
+    def _gen_reset_password_token(self, user):
+        return self.generate_user_token(user, salt="password-reset")
+
     @action(default_option="user")
     def gen_reset_password_token(self, user=None, send_email=None):
         """Generates a reset password token and optionnaly (default to yes) send the reset
@@ -596,7 +673,7 @@ class UsersFeature(Feature):
         if not user:
             raise InvalidOptionError("Invalid user in 'reset_password_token' action")
 
-        token = self.generate_user_token(user, salt="password-reset")
+        token = self._gen_reset_password_token(user)
         self.reset_password_token_signal.send(self, user=user, token=token)
         if (send_email is None and self.options["send_reset_password_email"]) or send_email:
             to_email = getattr(user, self.options["email_column"])
@@ -643,7 +720,7 @@ class UsersFeature(Feature):
             user = self.find_by_username(username)
             if not user:
                 raise Exception("User '%s' not found" % username)
-            self.update_password(user, password)
+            self.update_password(user, password, skip_validation=True)
             save_model(user)
 
     @action("update_user_password", default_option="user")
@@ -671,7 +748,12 @@ class UsersFeature(Feature):
                 flash(self.options["update_password_error_message"], "error")
             current_context.exit(trigger_action_group="reset_password_current_mismatch")
         self.check_password_confirm(form, "reset_password_confirm_mismatch")
-        self.update_password(user, form[pwcol].data)
+        try:
+            self.update_password(user, form[pwcol].data)
+        except PasswordValidationFailedException as e:
+            current_context["password_validation_error"] = e.reason
+            current_context.exit(trigger_action_group="password_validation_failed")
+
 
     @action(default_option="user")
     def check_user_password(self, user, password=None, form=None):
