@@ -300,7 +300,7 @@ class UsersFeature(Feature):
         pwcol = self.options["password_column"]
         pwhash = self.bcrypt.generate_password_hash(password) if not pwhash else pwhash
 
-        if self.options['min_time_between_password_change'] and user.last_password_change_at:
+        if self.options['min_time_between_password_change'] and user.last_password_change_at and not user.must_reset_password_at_login:
             if (datetime.datetime.utcnow() - user.last_password_change_at).total_seconds() < self.options['min_time_between_password_change']:
                 if flash_messages and self.options['min_time_between_password_change_message']:
                     flash(self.options['min_time_between_password_change_message'], 'error')
@@ -317,9 +317,9 @@ class UsersFeature(Feature):
                         raise PasswordValidationFailedException("invalid_password", label)
                     return False
 
-        if self.options['prevent_password_reuse']:
+        if self.options['prevent_password_reuse'] and getattr(user, pwcol):
             for oldhash in [getattr(user, pwcol)] + (user.previous_passwords or []):
-                if self.bcrypt.check_password_hash(oldhash, password):
+                if oldhash and self.bcrypt.check_password_hash(oldhash, password):
                     if flash_messages and self.options['password_reused_message']:
                         flash(self.options['password_reused_message'], 'error')
                     if raise_error:
@@ -450,7 +450,7 @@ class UsersFeature(Feature):
     @command.arg("password")
     @action()
     def signup(self, username_=None, password=None, user=None, form=None, login_user=None, send_email=None,\
-               must_provide_password=True, provider=None, validate_user=True, **attrs):
+               must_provide_password=True, provider=None, validate_user=True, validate_password=True, **attrs):
         with transaction():
             ucol = self.options['username_column']
             pwcol = self.options['password_column']
@@ -492,7 +492,7 @@ class UsersFeature(Feature):
                 form.populate_obj(user, ignore_fields=[pwcol, pwconfirmfield])
 
             populate_obj(user, attrs)
-            if password:
+            if password and validate_password:
                 try:
                     self.update_password(user, password)
                 except PasswordValidationFailedException as e:
