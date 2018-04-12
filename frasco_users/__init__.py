@@ -310,7 +310,7 @@ class UsersFeature(Feature):
 
         if self.options['validate_password_regexps']:
             for pattern, label in self.options['validate_password_regexps']:
-                if not re.match(pattern, password):
+                if not re.search(pattern, password):
                     if flash_messages and self.options['validate_password_regexps_message']:
                         flash(self.options['validate_password_regexps_message'].format(rule=label), 'error')
                     if raise_error:
