@@ -99,7 +99,7 @@ def oauth_signup(users, models):
     signup_url = url_for(".signup", oauth=1, next=request.args.get("next"))
     user = users.model()
     populate_obj(user, session["oauth_user_defaults"] or {})
-    if not users.validate_signuping_user(user, flash_messages=False, raise_error=False):
+    if not users.validate_user(user, flash_messages=False, raise_error=False):
         return redirect(signup_url)
 
     try:

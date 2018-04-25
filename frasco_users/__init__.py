@@ -852,17 +852,19 @@ class UsersFeature(Feature):
                 self.current.auth_providers.append(provider)
             current_app.features.models.save(self.current, **attrs)
         elif not user:
-            return self.oauth_signup(provider, attrs, defaults)
+            return self.oauth_signup(provider, attrs, defaults, redirect_url=redirect_url)
         else:
             self.login(user, provider=provider, **attrs)
         return redirect(redirect_url)
 
-    def oauth_signup(self, provider, attrs, defaults):
+    def oauth_signup(self, provider, attrs, defaults, redirect_url=None):
         """Start the signup process after having logged in via oauth
         """
         session["oauth_user_defaults"] = defaults
         session["oauth_user_attrs"] = dict(provider=provider, **attrs)
-        return redirect(url_for('users.oauth_signup', next=request.args.get("next")))
+        if not redirect_url:
+            redirect_url = request.args.get("next")
+        return redirect(url_for('users.oauth_signup', next=redirect_url))
 
     @command("show")
     def show_user_command(self, username):
