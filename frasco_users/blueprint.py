@@ -75,7 +75,7 @@ def signup(users):
             "users.login", next=request.args.get("next")))
 
     if current_context["form"].is_submitted() and current_context["form"].validate():
-        if users.options['recaptcha_secret']:
+        if users.options['recaptcha_secret'] and not current_app.debug and not current_app.testing:
             if 'g-recaptcha-response' not in request.form:
                 return redirect(url_for('users.signup', next=request.args.get('next')))
             r = requests.post('https://www.google.com/recaptcha/api/siteverify', data={
