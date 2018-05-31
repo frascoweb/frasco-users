@@ -3,6 +3,7 @@ from frasco import (Blueprint, with_actions, redirect, request, current_app,\
                     populate_obj, ContextExitException)
 from frasco.expression import compile_expr
 import datetime
+import requests
 
 
 bp = Blueprint("users", __name__, template_folder="templates")
@@ -74,14 +75,29 @@ def signup(users):
             "users.login", next=request.args.get("next")))
 
     if current_context["form"].is_submitted() and current_context["form"].validate():
+        if users.options['recaptcha_secret']:
+            if 'g-recaptcha-response' not in request.form:
+                return redirect(url_for('users.signup', next=request.args.get('next')))
+            r = requests.post('https://www.google.com/recaptcha/api/siteverify', data={
+                'secret': users.options['recaptcha_secret'],
+                'response': request.form['g-recaptcha-response'],
+                'remote_ip': request.remote_addr
+            })
+            if r.status_code != 200 or not r.json().get('success'):
+                if users.options['recaptcha_fail_message']:
+                    flash(users.options['recaptcha_fail_message'], 'error')
+                return redirect(url_for('users.signup', next=request.args.get('next')))
+
         user = users.model()
         if "oauth_user_defaults" in session:
             populate_obj(user, session["oauth_user_defaults"] or {})
+
         if users.options['require_code_on_signup'] and 'code' in current_context['form'] and\
           not users.check_signup_code(current_context['form'].code.data):
             if users.options['bad_signup_code_message']:
                 flash(users.options['bad_signup_code_message'], 'error')
             return redirect(url_for('users.signup', next=request.args.get('next')))
+
         users.signup(user, form=current_context["form"],
             must_provide_password=current_context["must_provide_password"], **session.get("oauth_user_attrs", {}))
         session.pop("oauth_user_defaults", None)

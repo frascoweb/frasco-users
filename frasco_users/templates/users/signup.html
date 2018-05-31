@@ -1,11 +1,20 @@
 {% extends "users/layout.html" %}
 {% block users_title %}{{ _("Signup") }}{% endblock %}
+{% block head %}
+  {{ super() }}
+  {% if app.features.users.options['recaptcha_key'] %}
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  {% endif %}
+{% endblock %}
 {% block users_content %}
 <{ form_tag form }>
   <{ form_field form.email.email(_("Email"), required=True) }/>
   {% if must_provide_password %}
   <{ form_field form.password.password(_("Password")) }/>
   <{ form_field form.password_confirm.password(_("Confirm password")) }/>
+  {% endif %}
+  {% if app.features.users.options['recaptcha_key'] %}
+  <div class="g-recaptcha" data-sitekey="{{ app.features.users.options['recaptcha_key'] }}"></div>
   {% endif %}
   <{ form_btn _("Signup") }/>
 </{}>

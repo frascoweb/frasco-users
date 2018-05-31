@@ -78,6 +78,8 @@ class UsersFeature(Feature):
                 "expire_password_after": None,
                 "require_code_on_signup": False,
                 "allowed_signup_codes": [],
+                "recaptcha_key": None,
+                "recaptcha_secret": None,
                 "rate_limit_count": None,
                 "rate_limit_period": 60,
                 "oauth_signup_only": False,
@@ -124,6 +126,7 @@ class UsersFeature(Feature):
                 "update_password_error_message": lazy_translate(u"Invalid current password"),
                 "update_user_email_error_message": lazy_translate(u"An account using the same email already exists"),
                 "oauth_user_already_exists_message": lazy_translate(u"This {provider} account has already been used on a different account"),
+                "recaptcha_fail_message": lazy_translate(u"The captcha validation has failed"),
                 "enable_admin": True}
 
     init_signal = signal('users_init')
