@@ -511,7 +511,7 @@ class UsersFeature(Feature):
 
             if validate_user:
                 try:
-                    self.validate_user(user, must_provide_password=must_provide_password)
+                    self.validate_user(user, must_provide_password=must_provide_password, is_signup=True)
                 except SignupValidationFailedException as e:
                     current_context["signup_error"] = e.reason
                     current_context.exit(trigger_action_group="signup_validation_failed")
@@ -551,7 +551,7 @@ class UsersFeature(Feature):
             current_context.exit(trigger_action_group=trigger_action_group)
 
     def validate_user(self, user=None, username=None, email=None, password=None, ignore_user_id=None,
-                      must_provide_password=False, flash_messages=True, raise_error=True):
+                      must_provide_password=False, flash_messages=True, raise_error=True, is_signup=False):
         """Validates a new user object before saving it in the database.
         Checks if a password is present unless must_provide_password is False.
         Checks if the username is unique unless the option username_is_unique is set to False.
@@ -576,7 +576,7 @@ class UsersFeature(Feature):
             return False
 
         if self.user_validator and self.override_builtin_user_validation:
-            if not self.user_validator(username, email, password):
+            if not self.user_validator(username, email, password, is_signup):
                 if raise_error:
                     raise SignupValidationFailedException("failed_validation")
                 return False
@@ -636,7 +636,7 @@ class UsersFeature(Feature):
                     raise SignupValidationFailedException("email_exists")
                 return False
 
-        if self.user_validator and not self.user_validator(username, email, password):
+        if self.user_validator and not self.user_validator(username, email, password, is_signup):
             if raise_error:
                 raise SignupValidationFailedException("failed_validation")
             return False
